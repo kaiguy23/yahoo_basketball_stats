@@ -238,9 +238,9 @@ if __name__ == '__main__':
         teamDF = get_team_ids(sc, curLg2021)
         startDate, endDate = curLg2021.week_date_range(week)
         dateDiff = endDate - startDate
-        # get the date ranges with a timestamp of 11:59:59 PM; that way the day has ended 
+        # get the date ranges with a timestamp of 11:59:59 PM; that way the day has ended
         # so all of the players in non-bench positions with a game will have played
-        dateRanges = [datetime.datetime.combine(startDate + datetime.timedelta(days=d), datetime.time(23,59,59)) 
+        dateRanges = [datetime.datetime.combine(startDate + datetime.timedelta(days=d), datetime.time(23,59,59))
                     for d in range(dateDiff.days + 2)]
         # get sunday from the week before as well to see if there were any add rights before the week started
         previousSunday = datetime.datetime.combine(startDate - datetime.timedelta(days=1), datetime.time(23,59,59))
