@@ -4,6 +4,7 @@ import pandas as pd
 import matplotlib
 from matplotlib.patches import Rectangle
 import matplotlib.pyplot as plt
+import datetime
 import seaborn as sn
 import pprint
 
@@ -186,6 +187,25 @@ def max_min_stats(league, df, visualize=True):
 
     return maxStatDict, minStatDict
 
+def get_team_ids(sc, league):
+    """
+    get the team id, manager, team name, and team object for each team in the league
+    inputs:
+        sc: class, yahoo oauth object
+        league: class, yahoo_fantasy_api.league.League
+    returns:
+        teamDF: pandas dataframe, contains the team id, manager, team name for each team, and team object
+    """
+    # extract team info from league
+    teams = league.teams()
+    teamInfo = [[teamID, item['managers'][0]['manager']['nickname'], item['name'], yfa.Team(sc,teamID)]
+                for teamID, item in teams.items()]
+
+    # construct dataframe
+    teamDF = pd.DataFrame(teamInfo, columns = ['teamID', 'manager','teamName', 'teamObject'])
+
+    return teamDF
+
 if __name__ == '__main__':
 
     # set up authentication
@@ -209,3 +229,66 @@ if __name__ == '__main__':
         df, matchupScore, matchupWinner = create_matchup_comparison(curLg2021, df)
         # also compute the highest/lowest per category
         maxStatDict, minStatDict = max_min_stats(curLg2021, df)
+
+        # add in continue here so the code doesn't break from the new code added below.
+        # currently getting hit with a "RuntimeError: b'Request denied\r\n'"
+        # I think I'm requesting too much data from their servers... RIP
+        continue
+
+        teamDF = get_team_ids(sc, curLg2021)
+        startDate, endDate = curLg2021.week_date_range(week)
+        dateDiff = endDate - startDate
+        # get the date ranges with a timestamp of 11:59:59 PM; that way the day has ended 
+        # so all of the players in non-bench positions with a game will have played
+        dateRanges = [datetime.datetime.combine(startDate + datetime.timedelta(days=d), datetime.time(23,59,59)) 
+                    for d in range(dateDiff.days + 2)]
+        # get sunday from the week before as well to see if there were any add rights before the week started
+        previousSunday = datetime.datetime.combine(startDate - datetime.timedelta(days=1), datetime.time(23,59,59))
+        # get the roster for previous sunday
+        teamDF[previousSunday] = teamDF['teamObject'].apply(lambda teamObject: pd.DataFrame(teamObject.roster(day = previousSunday)))
+        # loop through the days and get the roster for each day
+        # get stat categories we care about
+        statCats = curLg2021.stat_categories()
+        statCats = [statNames['display_name'] for statNames in statCats]
+        for currentDate in dateRanges:
+            # get the roster for the current date
+            teamDF[currentDate] = teamDF['teamObject'].apply(lambda teamObject: pd.DataFrame(teamObject.roster(day = currentDate)))
+            # loop through the roster for each team. roster is the same thing as teamDF.loc[idx,currentDate]
+            for idx, roster in enumerate(teamDF[currentDate]):
+                # set if the player was started
+                teamDF.loc[idx,currentDate]['started'] = roster['selected_position'].apply(lambda pos: True if pos != 'IL' and pos != 'IL+' and pos != 'BN' else False)
+                # grab the player stats for the whole roster
+                playersStats = roster['player_id'].apply(lambda player_id: curLg2021.player_stats(player_id, 'date', date = currentDate)).to_list()
+                # loop through each player in the roster and assign their stats to the roster dataframe
+                for player in playersStats:
+                    if len(player) != 1:
+                        print('Only one list of stats should be returned for each player.')
+                        print('Using the first item in the list')
+                    # the league.player_stats function returns a list of dictionaries. There should only be one for each player
+                    player = player[0]
+                    # for each stat in the league stat categories, save out the stats
+                    for currentStat in statCats:
+                        teamDF.loc[idx,currentDate].loc[roster['player_id']==player['player_id'],currentStat] = 0 if player[currentStat] == '-' else player[currentStat]
+        # also calculate the stats for each team if they kept their team from last week
+        for idx, roster in enumerate(teamDF[previousSunday]):
+            # initiate each stat at 0 for each player in the sunday roster for the current team
+            for currentStat in statCats:
+                teamDF.loc[idx,previousSunday][currentStat] = 0
+            # for each day in the week get the players stats
+            for currentDate in dateRanges:
+                # grab the player stats for the whole roster
+                playersStats = roster['player_id'].apply(lambda player_id: curLg2021.player_stats(player_id, 'date', date = currentDate)).to_list()
+                # loop through each player in the roster and assign their stats to the roster dataframe
+                for player in playersStats:
+                    if len(player) != 1:
+                        print('Only one list of stats should be returned for each player.')
+                        print('Using the first item in the list')
+                    # the league.player_stats function returns a list of dictionaries. There should only be one for each player
+                    player = player[0]
+                    # for each stat in the league stat categories, save out the stats
+                    import pdb; pdb.set_trace()
+                    for currentStat in statCats:
+                        teamDF.loc[idx,previousSunday].loc[roster['player_id']==player['player_id'],currentStat] += 0 if player[currentStat] == '-' else player[currentStat]
+        # TODO: Figure out which team had the best GM
+        # Figure out which players on each roster was added and dropped over the course of the week for each team
+        # Just compare back to the sunday roster.
