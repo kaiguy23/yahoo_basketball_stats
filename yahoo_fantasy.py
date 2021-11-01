@@ -7,6 +7,9 @@ import matplotlib.pyplot as plt
 import datetime
 import seaborn as sn
 import pprint
+import json
+import yaml
+import dataframe_image as dfi
 
 from yahoo_oauth import OAuth2
 import yahoo_fantasy_api as yfa
@@ -110,6 +113,21 @@ def create_matchup_comparison(league, df, visualize=True, saveDir='matchup resul
     matchupWinner[idxs] = -1
     matchupScore[idxs] = 'N/A'
 
+    # fix manager names and team names for saving out data
+    for idx, row in df.iterrows():
+        manager = row['manager']
+        team = row['teamName']
+        newManager = ''
+        newTeam = ''
+        for char in manager:
+            if char.isalnum() or char == ' ' or char == '-':
+                newManager += char
+        for char in team:
+            if char.isalnum() or char == ' ' or char == '-':
+                newTeam += char
+        df.loc[idx, 'manager'] = newManager
+        df.loc[idx, 'teamName'] = newTeam
+
     if visualize:
         # make save directory
         weekSaveDir = os.path.join(saveDir, f'week{df.name}')
@@ -117,8 +135,7 @@ def create_matchup_comparison(league, df, visualize=True, saveDir='matchup resul
 
         # save out the dataframe
         df.to_csv(os.path.join(weekSaveDir,'matchupTotals.csv'),index=False)
-
-        print(df[['manager', 'teamName','totalWins','totalLosses']])
+        dfi.export(df[['manager', 'teamName','totalWins','totalLosses']], os.path.join(weekSaveDir,'matchupTotalsTable.png'))
 
         # set colors so that black = -1 / N/A, red = 0 / Loss, green = 1 / Win
         colors = ['black','red','green']
@@ -147,7 +164,7 @@ def create_matchup_comparison(league, df, visualize=True, saveDir='matchup resul
 
     return df, matchupScore, matchupWinner
 
-def max_min_stats(league, df, visualize=True):
+def max_min_stats(league, df, visualize=True, saveDir='matchup results'):
     """
     calculate the min and max stats for each category for the week
     inputs:
@@ -159,33 +176,68 @@ def max_min_stats(league, df, visualize=True):
         minStatDict: dictionary with lowest stat totals for the week
     """
     # parse the stat categories
-    statCats = league.stat_categories()
-    statCats = [statNames['display_name'] for statNames in statCats]
-    statCats += ['FGM', 'FGA', 'FTM', 'FTA']
+    origStatCats = league.stat_categories()
+    origStatCats = [statNames['display_name'] for statNames in origStatCats]
+    statCats = origStatCats + ['FGM', 'FGA', 'FTM', 'FTA']
 
-    # also compute the highest/lowest per category
-    maxStatDict = {s:{} for s in statCats}
+    # make save directory
+    weekSaveDir = os.path.join(saveDir, f'week{df.name}')
+    os.makedirs(weekSaveDir,exist_ok=True)
+
+    # compute the highest per category
+    maxStatList = []
     maxCats = df.loc[df[statCats].idxmax()]
     maxCats.reset_index(drop=True,inplace=True)
     for idx, row in maxCats.iterrows():
         curCat = statCats[idx]
-        maxStatDict[curCat] = {row['manager']: row[curCat]}
-    
-    minStatDict = {s:{} for s in statCats}
+        maxStatList.append([curCat, row[curCat], row['manager']])
+
+    # save out the data
+    maxStatDF = pd.DataFrame(maxStatList, columns = ['Stat', 'Value', 'Manager'])
+    maxStatDF.to_csv(os.path.join(weekSaveDir,'maxStats.csv'),index=False)
+
+    # compute lowest per category
+    minStatList = []
     minCats = df.loc[df[statCats].idxmin()]
     minCats.reset_index(drop=True,inplace=True)
     for idx, row in minCats.iterrows():
         curCat = statCats[idx]
-        minStatDict[curCat] = {row['manager']: row[curCat]}
-    
-    if visualize:
-        pprint.pprint('Lowest Stat Totals')
-        pprint.pprint(minStatDict)
-        
-        pprint.pprint('Highest Stat Totals')
-        pprint.pprint(maxStatDict)
+        minStatList.append([curCat, row[curCat], row['manager']])
 
-    return maxStatDict, minStatDict
+    # save out the data
+    minStatDF = pd.DataFrame(minStatList, columns = ['Stat', 'Value', 'Manager'])
+    minStatDF.to_csv(os.path.join(weekSaveDir,'minStats.csv'),index=False)
+
+    if visualize:
+        dfi.export(minStatDF, os.path.join(weekSaveDir,'minStats.png'))
+        dfi.export(maxStatDF, os.path.join(weekSaveDir,'maxStats.png'))
+
+        # make bar charts as well
+        # sorted stats
+        fig, ax = plt.subplots(3,3, figsize = (20,20))
+        for idx, s in enumerate(origStatCats):
+            row = idx // 3
+            col = idx % 3
+            df.sort_values(by = s, inplace = True)
+            ax[row,col].bar(df['manager'], df[s])
+            ax[row,col].set_title(s)
+        plt.suptitle('Sorted Stats')
+        plt.savefig(os.path.join(weekSaveDir,'sortedStats.png'))
+        plt.close()
+
+        # sorted by manager name
+        df.sort_values(by = 'manager', inplace = True)
+        fig, ax = plt.subplots(3,3, figsize = (20,20))
+        for idx, s in enumerate(origStatCats):
+            row = idx // 3
+            col = idx % 3
+            ax[row,col].bar(df['manager'], df[s])
+            ax[row,col].set_title(s)
+        plt.suptitle('Stats')
+        plt.savefig(os.path.join(weekSaveDir,'stats.png'))
+        plt.close()
+
+    return maxStatDF, minStatDF
 
 def get_team_ids(sc, league):
     """
@@ -206,19 +258,68 @@ def get_team_ids(sc, league):
 
     return teamDF
 
-if __name__ == '__main__':
+def refresh_oauth_file(oauthFile = 'yahoo_oauth.json', sport = 'nba', year = 2021, refresh = False):
+    """
+    refresh the json file with your consumer secret and consumer key by deleting the other variables.
+    this is done to avoid the yahoo api max call limit, which will just give you a request denied.
+    you will have to re-enter the yahoo key that will opened in an internet browser
 
-    # set up authentication
-    sc = OAuth2(None, None, from_file='yahoo_oauth.json')
+    inputs:
+        jsonFile: json, file path to file with consumer key and consumer secret
+        sport: str, league for the stats you want
+        year: int, year of the league you want
+    returns:
+        sc: yahoo_oauth, key for yahoo api
+        gm: class, nba fantasy group
+        currentLeague: class, league for the given year
+    """
+    if refresh:
+        ext = os.path.splitext(oauthFile)[1]
+
+        # load in the file
+        if ext =='.json':
+            # read the current json file
+            with open(oauthFile, 'r') as f:
+                oauthKeys = json.load(f)
+        elif ext =='.yaml':
+            # read the current json file
+            with open(oauthFile, 'r') as f:
+                oauthKeys = yaml.safe_load(f)
+        else:
+            raise ValueError('Wrong file format for yahoo oauth keys. Please use json or yaml')
+
+        # make a new dictionary with the consumer key and consumer secret variables
+        newKeys = {}
+        newKeys['consumer_key'] = oauthKeys['consumer_key']
+        newKeys['consumer_secret'] = oauthKeys['consumer_secret']
+
+        # delete the original json file before writing a new one
+        os.remove(oauthFile)
+
+        # save out the new keys to the original file
+        with open(oauthFile, 'w') as f:
+            if ext =='.json':
+                json.dump(newKeys, f)
+            elif ext == '.yaml':
+                yaml.dump(newKeys, f)
+
+    # set up authenication
+    sc = OAuth2(None, None, from_file=oauthFile)
 
     # get the nba fantasy group
-    gm = yfa.Game(sc, 'nba')
+    gm = yfa.Game(sc, sport)
 
     # get the current nba fantasy league
-    lg2021 = gm.league_ids(year=2021)
+    league = gm.league_ids(year=year)
 
     # get the current league stats based on the current year id
-    curLg2021 = gm.to_league(lg2021[0])
+    currentLeague = gm.to_league(league[0])
+
+    return sc, gm, currentLeague
+
+if __name__ == '__main__':
+
+    sc, gm, curLg2021 = refresh_oauth_file(oauthFile = 'yahoo_oauth.json')
 
     # for each previous week (don't include the current one)
     # yahoo week index starts at 1 so make sure to start looping at 1
@@ -228,7 +329,7 @@ if __name__ == '__main__':
         # calculate matchups
         df, matchupScore, matchupWinner = create_matchup_comparison(curLg2021, df)
         # also compute the highest/lowest per category
-        maxStatDict, minStatDict = max_min_stats(curLg2021, df)
+        maxStatDF, minStatDF = max_min_stats(curLg2021, df)
 
         # add in continue here so the code doesn't break from the new code added below.
         # currently getting hit with a "RuntimeError: b'Request denied\r\n'"
@@ -286,7 +387,6 @@ if __name__ == '__main__':
                     # the league.player_stats function returns a list of dictionaries. There should only be one for each player
                     player = player[0]
                     # for each stat in the league stat categories, save out the stats
-                    import pdb; pdb.set_trace()
                     for currentStat in statCats:
                         teamDF.loc[idx,previousSunday].loc[roster['player_id']==player['player_id'],currentStat] += 0 if player[currentStat] == '-' else player[currentStat]
         # TODO: Figure out which team had the best GM
