@@ -215,25 +215,30 @@ def max_min_stats(league, df, visualize=True, saveDir='matchup results'):
         # make bar charts as well
         # sorted stats
         fig, ax = plt.subplots(3,3, figsize = (20,20))
+        fig.subplots_adjust(hspace=.5, wspace = .5)
         for idx, s in enumerate(origStatCats):
             row = idx // 3
             col = idx % 3
             df.sort_values(by = s, inplace = True)
             ax[row,col].bar(df['manager'], df[s])
             ax[row,col].set_title(s)
-        plt.suptitle('Sorted Stats')
+            ax[row,col].tick_params(axis='x', rotation=75)
+        # import pdb; pdb.set_trace()
+            # ax[row,col].set_xticklabels(ax[row,col].get_xticks(), rotation = 45)
+        plt.suptitle('Sorted Stats', fontsize = 40)
         plt.savefig(os.path.join(weekSaveDir,'sortedStats.png'))
         plt.close()
-
         # sorted by manager name
         df.sort_values(by = 'manager', inplace = True)
         fig, ax = plt.subplots(3,3, figsize = (20,20))
+        fig.subplots_adjust(hspace=.5, wspace = .5)
         for idx, s in enumerate(origStatCats):
             row = idx // 3
             col = idx % 3
             ax[row,col].bar(df['manager'], df[s])
             ax[row,col].set_title(s)
-        plt.suptitle('Stats')
+            ax[row,col].tick_params(axis='x', rotation=75)
+        plt.suptitle('Stats', fontsize = 40)
         plt.savefig(os.path.join(weekSaveDir,'stats.png'))
         plt.close()
 
