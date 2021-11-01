@@ -10,10 +10,12 @@ You will need to install the following packages or just clone the environment fi
 
 * __https://github.com/josuebrunel/yahoo-oauth__
 * __https://github.com/spilchen/yahoo_fantasy_api__
+* __https://pypi.org/project/dataframe-image/__
 
 ```python
 pip install yahoo_oauth
 pip install yahoo_fantasy_api
+pip install dataframe-image
 ```
 
 ### Create Conda Environment 
