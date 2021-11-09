@@ -17,11 +17,20 @@ import yahoo_fantasy_api as yfa
 def extract_matchup_scores(league, week):
     """
     extract the matchup stats for each person for the given week
-    inputs:
-        league: class, yahoo_fantasy_api.league.League
-        week: int, week to extract matchup data from
-    returns:
-        df: pandas dataframe, contains matchup stats for each person for a given week
+
+
+    Parameters
+    ----------
+    league : class
+         yahoo_fantasy_api.league.League
+    week : int
+         week to extract matchup data from.
+
+    Returns
+    -------
+    df : pandas dataframe
+        contains matchup stats for each person for a given week.
+
     """
     # parse the stat categories
     statCats = league.stat_categories()
@@ -65,14 +74,29 @@ def extract_matchup_scores(league, week):
 
 def create_matchup_comparison(league, df, visualize=True, saveDir='matchup results'):
     """
-    create the matchup matrix to compare each person to each other
-    inputs:
-        league: class, yahoo_fantasy_api.league.League
-        df: pandas dataframe, contains matchup stats for each person for a given week
-    returns:
-        df: pandas dataframe, contains matchup stats for each person for a given week
-        matchupScore: numpy array, contains the matchup score for each head to head comparison
-        matchupWinner: numpy array, winner of the head to head matchups
+     create the matchup matrix to compare each person to each other
+     
+
+    Parameters
+    ----------
+    league : class
+        yahoo_fantasy_api.league.League
+    df : pandas dataframe
+        contains matchup stats for each person for a given week.
+    visualize : bool, optional
+        decide if you want to visualize the results. The default is True.
+    saveDir : str, optional
+        directory. The default is 'matchup results'.
+
+    Returns
+    -------
+    df : pandas dataframe
+        contains matchup stats for each person for a given week.
+    matchupScore : numpy array
+        contains the matchup score for each head to head comparison.
+    matchupWinner : numpy array
+        winner of the head to head matchups.
+
     """
     # parse the stat categories
     statCats = league.stat_categories()
@@ -114,19 +138,7 @@ def create_matchup_comparison(league, df, visualize=True, saveDir='matchup resul
     matchupScore[idxs] = 'N/A'
 
     # fix manager names and team names for saving out data
-    for idx, row in df.iterrows():
-        manager = row['manager']
-        team = row['teamName']
-        newManager = ''
-        newTeam = ''
-        for char in manager:
-            if char.isalnum() or char == ' ' or char == '-':
-                newManager += char
-        for char in team:
-            if char.isalnum() or char == ' ' or char == '-':
-                newTeam += char
-        df.loc[idx, 'manager'] = newManager
-        df.loc[idx, 'teamName'] = newTeam
+    df = fix_names_teams(df)
 
     if visualize:
         # make save directory
@@ -164,16 +176,85 @@ def create_matchup_comparison(league, df, visualize=True, saveDir='matchup resul
 
     return df, matchupScore, matchupWinner
 
+def fix_names_teams(df):
+    """
+    edits the dataframe's teamName and manager columns so we can save them our correctly
+    
+
+    Parameters
+    ----------
+    df : pandas dataframe
+        contains teamName and manager columns.
+
+    Returns
+    -------
+    df : pandas dataframe
+        modified dataframe.
+
+    """
+    for idx, row in df.iterrows():
+        manager = row['manager']
+        team = row['teamName']
+        newManager = ''
+        newTeam = ''
+        for char in manager:
+            if char.isalnum() or char == ' ' or char == '-':
+                newManager += char
+        for char in team:
+            if char.isalnum() or char == ' ' or char == '-':
+                newTeam += char
+        df.loc[idx, 'manager'] = newManager
+        df.loc[idx, 'teamName'] = newTeam
+    return df
+
+def highlight_max_and_min_cols(row):
+    """
+    Parameters
+    ----------
+    row : row of pandas dataframe
+
+
+    Returns
+    -------
+    backgrounds : list
+        contains string of cell part and color.
+
+    """
+    
+    backgrounds = [''] * len(row)
+    if row.name=='TO':
+        backgrounds = [''] * len(row)
+        backgrounds[row.argmin()] = 'background: green'
+        backgrounds[row.argmax()] = 'background: red'
+        return backgrounds
+    else:
+        backgrounds[row.argmin()] = 'background: red'
+        backgrounds[row.argmax()] = 'background: green'
+        return backgrounds
+
 def max_min_stats(league, df, visualize=True, saveDir='matchup results'):
     """
     calculate the min and max stats for each category for the week
-    inputs:
-        league: class, yahoo_fantasy_api.league.League
-        df: pandas dataframe, contains matchup stats for each person for a given week
 
-    returns:
-        maxStatDict: dictionary with highest stat totals for the week
-        minStatDict: dictionary with lowest stat totals for the week
+
+    Parameters
+    ----------
+    league : class
+        yahoo_fantasy_api.league.League.
+    df : pandas dataframe
+        contains matchup stats for each person for a given week.
+    visualize : bool, optional
+        decide if you want to visualize the results. The default is True.
+    saveDir : str, optional
+        directory. The default is 'matchup results'.
+
+    Returns
+    -------
+    maxStatDF : pandas dataframe
+        contains the best stat totals for the week.
+    minStatDF : pandas dataframe
+        contains the worst stat totals for the week
+
     """
     # parse the stat categories
     origStatCats = league.stat_categories()
@@ -223,8 +304,7 @@ def max_min_stats(league, df, visualize=True, saveDir='matchup results'):
             ax[row,col].bar(df['manager'], df[s])
             ax[row,col].set_title(s)
             ax[row,col].tick_params(axis='x', rotation=75)
-        # import pdb; pdb.set_trace()
-            # ax[row,col].set_xticklabels(ax[row,col].get_xticks(), rotation = 45)
+
         plt.suptitle('Sorted Stats', fontsize = 40)
         plt.savefig(os.path.join(weekSaveDir,'sortedStats.png'))
         plt.close()
@@ -247,11 +327,20 @@ def max_min_stats(league, df, visualize=True, saveDir='matchup results'):
 def get_team_ids(sc, league):
     """
     get the team id, manager, team name, and team object for each team in the league
-    inputs:
-        sc: class, yahoo oauth object
-        league: class, yahoo_fantasy_api.league.League
-    returns:
-        teamDF: pandas dataframe, contains the team id, manager, team name for each team, and team object
+
+
+    Parameters
+    ----------
+    sc: class
+         yahoo oauth object.
+    league : class
+        yahoo_fantasy_api.league.League.
+
+    Returns
+    -------
+    teamDF : pandas dataframe
+        contains the team id, manager, team name for each team, and team object
+
     """
     # extract team info from league
     teams = league.teams()
@@ -265,18 +354,30 @@ def get_team_ids(sc, league):
 
 def refresh_oauth_file(oauthFile = 'yahoo_oauth.json', sport = 'nba', year = 2021, refresh = False):
     """
-    refresh the json file with your consumer secret and consumer key by deleting the other variables.
-    this is done to avoid the yahoo api max call limit, which will just give you a request denied.
-    you will have to re-enter the yahoo key that will opened in an internet browser
+    refresh the json file with your consumer secret and consumer key 
 
-    inputs:
-        jsonFile: json, file path to file with consumer key and consumer secret
-        sport: str, league for the stats you want
-        year: int, year of the league you want
-    returns:
-        sc: yahoo_oauth, key for yahoo api
-        gm: class, nba fantasy group
-        currentLeague: class, league for the given year
+
+    Parameters
+    ----------
+    oauthFile: str, optional
+         file path to file with consumer key and consumer secret. The default is 'yahoo_oauth.json'.
+    sport : str, optional
+        league for the stats you want. The default is 'nba'
+    year: int, optional
+        year of the league you want. The default is 2021
+    refresh: bool, optional
+        flag to use if you want to refresh your oauth key. This is done by deleting the other
+        variables in the given oauthFile. The default is false.
+
+    Returns
+    -------
+    sc : class
+        yahoo_oauth object.
+    gm : class
+        nba fantasy group
+    currentLeague: class
+        league for the given year
+
     """
     if refresh:
         ext = os.path.splitext(oauthFile)[1]
@@ -328,72 +429,212 @@ if __name__ == '__main__':
 
     # for each previous week (don't include the current one)
     # yahoo week index starts at 1 so make sure to start looping at 1
-    for week in range(1,curLg2021.current_week()):
-        # get the current week matchup stats
-        df = extract_matchup_scores(curLg2021, week)
-        # calculate matchups
-        df, matchupScore, matchupWinner = create_matchup_comparison(curLg2021, df)
-        # also compute the highest/lowest per category
-        maxStatDF, minStatDF = max_min_stats(curLg2021, df)
+    # for week in range(2,curLg2021.current_week()):
+    week = curLg2021.current_week()
+    # # get the current week matchup stats
+    df = extract_matchup_scores(curLg2021, week)
+    # calculate matchups
+    df, matchupScore, matchupWinner = create_matchup_comparison(curLg2021, df)
+    # also compute the highest/lowest per category
+    maxStatDF, minStatDF = max_min_stats(curLg2021, df)
 
-        # add in continue here so the code doesn't break from the new code added below.
-        # currently getting hit with a "RuntimeError: b'Request denied\r\n'"
-        # I think I'm requesting too much data from their servers... RIP
-        continue
 
-        teamDF = get_team_ids(sc, curLg2021)
-        startDate, endDate = curLg2021.week_date_range(week)
-        dateDiff = endDate - startDate
-        # get the date ranges with a timestamp of 11:59:59 PM; that way the day has ended
-        # so all of the players in non-bench positions with a game will have played
-        dateRanges = [datetime.datetime.combine(startDate + datetime.timedelta(days=d), datetime.time(23,59,59))
-                    for d in range(dateDiff.days + 2)]
-        # get sunday from the week before as well to see if there were any add rights before the week started
-        previousSunday = datetime.datetime.combine(startDate - datetime.timedelta(days=1), datetime.time(23,59,59))
-        # get the roster for previous sunday
-        teamDF[previousSunday] = teamDF['teamObject'].apply(lambda teamObject: pd.DataFrame(teamObject.roster(day = previousSunday)))
-        # loop through the days and get the roster for each day
-        # get stat categories we care about
-        statCats = curLg2021.stat_categories()
-        statCats = [statNames['display_name'] for statNames in statCats]
-        for currentDate in dateRanges:
-            # get the roster for the current date
-            teamDF[currentDate] = teamDF['teamObject'].apply(lambda teamObject: pd.DataFrame(teamObject.roster(day = currentDate)))
-            # loop through the roster for each team. roster is the same thing as teamDF.loc[idx,currentDate]
-            for idx, roster in enumerate(teamDF[currentDate]):
-                # set if the player was started
-                teamDF.loc[idx,currentDate]['started'] = roster['selected_position'].apply(lambda pos: True if pos != 'IL' and pos != 'IL+' and pos != 'BN' else False)
-                # grab the player stats for the whole roster
-                playersStats = roster['player_id'].apply(lambda player_id: curLg2021.player_stats(player_id, 'date', date = currentDate)).to_list()
-                # loop through each player in the roster and assign their stats to the roster dataframe
-                for player in playersStats:
-                    if len(player) != 1:
-                        print('Only one list of stats should be returned for each player.')
-                        print('Using the first item in the list')
-                    # the league.player_stats function returns a list of dictionaries. There should only be one for each player
-                    player = player[0]
-                    # for each stat in the league stat categories, save out the stats
-                    for currentStat in statCats:
-                        teamDF.loc[idx,currentDate].loc[roster['player_id']==player['player_id'],currentStat] = 0 if player[currentStat] == '-' else player[currentStat]
-        # also calculate the stats for each team if they kept their team from last week
-        for idx, roster in enumerate(teamDF[previousSunday]):
-            # initiate each stat at 0 for each player in the sunday roster for the current team
-            for currentStat in statCats:
-                teamDF.loc[idx,previousSunday][currentStat] = 0
-            # for each day in the week get the players stats
-            for currentDate in dateRanges:
-                # grab the player stats for the whole roster
-                playersStats = roster['player_id'].apply(lambda player_id: curLg2021.player_stats(player_id, 'date', date = currentDate)).to_list()
-                # loop through each player in the roster and assign their stats to the roster dataframe
-                for player in playersStats:
-                    if len(player) != 1:
-                        print('Only one list of stats should be returned for each player.')
-                        print('Using the first item in the list')
-                    # the league.player_stats function returns a list of dictionaries. There should only be one for each player
-                    player = player[0]
-                    # for each stat in the league stat categories, save out the stats
-                    for currentStat in statCats:
-                        teamDF.loc[idx,previousSunday].loc[roster['player_id']==player['player_id'],currentStat] += 0 if player[currentStat] == '-' else player[currentStat]
-        # TODO: Figure out which team had the best GM
-        # Figure out which players on each roster was added and dropped over the course of the week for each team
-        # Just compare back to the sunday roster.
+    # continue
+
+    # get stat categories we care about
+    statCats = curLg2021.stat_categories()
+    statCats = [statNames['display_name'] for statNames in statCats]
+    teamDF = get_team_ids(sc, curLg2021)
+    startDate, endDate = curLg2021.week_date_range(week)
+    dateDiff = endDate - startDate
+    # get the date ranges with a timestamp of 11:59:59 PM; that way the day has ended
+    # so all of the players in non-bench positions with a game will have played
+    dateRanges = [datetime.datetime.combine(startDate + datetime.timedelta(days=d), datetime.time(23,59,59))
+                for d in range(dateDiff.days + 2)]
+    # get sunday from the week before as well to see if there were any add rights before the week started
+    previousSunday = datetime.datetime.combine(startDate - datetime.timedelta(days=1), datetime.time(23,59,59))
+    # get the roster for previous sunday
+    teamDF[previousSunday] = teamDF['teamObject'].apply(lambda teamObject: pd.DataFrame(teamObject.roster(day = previousSunday)))
+    # add in stat cats
+    for idx in range(teamDF.shape[0]):
+        teamDF.loc[idx,previousSunday][statCats] = 0
+    # loop through the days and get the roster for each day
+    for dIdx, currentDate in enumerate(dateRanges):
+        # get the roster for the current date
+        currentRoster = teamDF['teamObject'].apply(lambda teamObject: pd.DataFrame(teamObject.roster(day = currentDate)))
+
+        # if it's the first day of the week, save the roster as a total's dataframe
+        # also add in statCats
+        if dIdx==0:
+            teamDF['rosterTotals'] = currentRoster.copy()
+            for idx in range(teamDF.shape[0]):
+                teamDF.loc[idx,'rosterTotals'][statCats] = 0
+                teamDF.loc[idx,'rosterTotals']['dropped'] = False
+                teamDF.loc[idx,'rosterTotals']['added'] = False
+
+        # loop through the roster for each team. roster is the same thing as teamDF.loc[idx,currentDate]
+        startedPlayerIDs = []
+        for idx, roster in enumerate(currentRoster):
+            # add stat cats as columns
+            currentRoster.loc[idx][statCats] = 0
+            # get the player roster for the current day as a list
+            startedPlayerIDs.extend(roster['player_id'].to_list())
+            # get the players from the previous sunday, aka last week's team as well. Get all players even if they didn't start
+            # our comparison will assume that someone would have just been able to start all of their players 
+            # from last week for all of the games in the current week
+            startedPlayerIDs.extend(teamDF.loc[idx,previousSunday]['player_id'].to_list())
+        # get the stats of the unique players
+        startedPlayerIDs = list(set(startedPlayerIDs))
+        playerStats = curLg2021.player_stats(startedPlayerIDs, 'date', date = currentDate)
+        playerStats = pd.DataFrame(playerStats)
+        # get the players who actually had games, ignore the player if all stat entries are '-'
+        playerStats = playerStats.loc[ ~(playerStats[statCats] == ['-']*9).all(axis=1)]
+        # replace categories with '-' entries with 0s
+        playerStats.replace('-', value = 0, inplace=True)
+        for idx, roster in enumerate(currentRoster):
+            # get player ids of those who were on today's roster, since we only want their stats, none of the dropped players stats
+            currentPlayers = list(set(playerStats['player_id'].to_list()) & set(roster['player_id']))
+            # assign player stats 
+            for pID in currentPlayers:
+                # check if the player was added this week, since they won't be in the dataframe
+                if pID not in teamDF.loc[idx,'rosterTotals']['player_id'].to_list():
+                    # add row to dataframe for the added player
+                    currentRoster.loc[idx].loc[roster['player_id']==pID, statCats] = playerStats.loc[playerStats['player_id']==pID, statCats].values
+                    row = currentRoster.loc[idx].loc[roster['player_id']==pID].copy()
+                    row['dropped'] = False
+                    row['added'] = True
+                    teamDF.loc[idx,'rosterTotals'].loc[len(teamDF.loc[idx,'rosterTotals'].index)] = row.values.tolist()[0]
+                # if the player is already in the roster, then just add their stats
+                else:
+                    teamDF.loc[idx,'rosterTotals'].loc[teamDF.loc[idx,'rosterTotals']['player_id']==pID, statCats] += playerStats.loc[playerStats['player_id']==pID, statCats].values
+
+            # get player ids of those who played from the previous week's roster
+            previousPlayers = list(set(playerStats['player_id'].to_list()) & set(teamDF.loc[idx,previousSunday]['player_id']))
+            # create sunday roster variable for later
+            previousRoster = teamDF.loc[idx,previousSunday]
+            # assign player stats 
+            for pID in previousPlayers:
+                teamDF.loc[idx,previousSunday].loc[previousRoster['player_id']==pID, statCats] += playerStats.loc[playerStats['player_id']==pID, statCats].values
+
+        # mark the dropped players from sunday to sunday
+        if dIdx==6:
+            for idx, roster in enumerate(teamDF['rosterTotals']):
+                # the set subtraction gets the players that were only in the roster from last sunday that aren't in the current sundays
+                droppedPlayerIDs = list(set(roster['player_id'].to_list()) - set(currentRoster.loc[idx]['player_id'].to_list()))
+                for d in droppedPlayerIDs:
+                    teamDF.loc[idx,'rosterTotals'].loc[roster['player_id']==d,'dropped'] = True
+        
+
+    df = extract_matchup_scores(curLg2021, week)
+    # get the non-% cats: yahoo doesn't give the FTA/FTM and FGA/FGM values...
+    countingStats = statCats[2:]
+    teamDF[countingStats] = 0
+    teamDF['adds'] = 0
+    countingResultsCols = ['improved categories', 'worsened categories']
+    teamDF[countingResultsCols] = 0
+
+    # create comparison difference between team A and team B
+    matchupDiffs = {}
+    for m in df['matchupNumber'].unique():
+        i,j = df[df['matchupNumber']==m].index
+        # save data as stats, opponent, matchup numbner
+        matchupDiffs[df.loc[i, 'manager']] = [df.loc[i, countingStats] - df.loc[j, countingStats], df.loc[j, 'manager'], m]
+        matchupDiffs[df.loc[j, 'manager']] = [df.loc[j, countingStats] - df.loc[i, countingStats], df.loc[i, 'manager'], m]
+
+    addsDF = teamDF.copy()
+    addedCountingStatsDict = {}
+    # for each roster, calculate the totals for the week
+    for idx in range(teamDF.shape[0]):
+        oldRoster = teamDF.loc[idx, previousSunday].copy()
+        currentRoster = teamDF.loc[idx, 'rosterTotals'].copy()
+        curManager = teamDF.loc[idx,'manager']
+
+        addsDF.loc[idx, 'adds'] = currentRoster['added'].sum()
+
+        weekTotalsDifference, opponentManager, matchupNumber = matchupDiffs[curManager]
+        addsDF.loc[idx, 'matchupNumber'] = matchupNumber
+        addsDF.loc[idx, 'opponent'] = opponentManager
+        teamDF.loc[idx, 'adds'] = currentRoster['added'].sum()
+        addedPlayerStats = currentRoster[countingStats].sum() - oldRoster[countingStats].sum() 
+        teamDF.loc[idx, countingStats] = addedPlayerStats
+        addedCountingStatsDict[curManager] = [addedPlayerStats, weekTotalsDifference]
+        # get the added player boost for each category
+        playerBoost = []
+        for c in range(len(addedPlayerStats)):
+            if c == len(addedPlayerStats) - 1:
+                # for the TO category, if the week total difference is more than the added players TOs
+                # removing them wouldn't make the difference negative for you to win
+                if weekTotalsDifference[c] > addedPlayerStats[c]:
+                    playerBoost.append('-')
+                # in the opposite case, you added players whose TOs were more than the difference, so 
+                # you caused yourself to lose the week...
+                else:
+                    playerBoost.append(addedPlayerStats[c] - weekTotalsDifference[c])
+            else:
+                # if the week total is negative for the non-TO category,
+                # then you wouldn't have won with your adds
+                if weekTotalsDifference[c] < 0 :
+                    playerBoost.append('-')
+                else:
+                    # difference closed with your adds
+                    playerBoost.append(addedPlayerStats[c] - weekTotalsDifference[c])
+
+        addsDF.loc[idx, countingStats] = playerBoost
+        # get the non TOs and TOs comparisons
+        improvement = sum(teamDF.loc[idx, countingStats[:-1]] > 0) + int(teamDF.loc[idx, countingStats[-1]] < 0)
+        worsened = sum(teamDF.loc[idx, countingStats[:-1]] < 0) + int(teamDF.loc[idx, countingStats[-1]] > 0)
+        teamDF.loc[idx, 'improved categories'] = improvement
+        teamDF.loc[idx, 'worsened categories'] = worsened
+    
+    finalComparisonDF = teamDF[['manager', 'teamName', 'adds'] + countingStats + countingResultsCols]
+
+    saveDir='matchup results'
+    weekSaveDir = os.path.join(saveDir, f'week{week}')
+    os.makedirs(weekSaveDir,exist_ok=True)
+
+
+    finalComparisonDF = fix_names_teams(finalComparisonDF)
+    finalComparisonDF.to_csv(os.path.join(weekSaveDir,'bestManager.csv'), index=False)
+    finalComparisonDF = finalComparisonDF.style.apply(highlight_max_and_min_cols,subset = countingStats,axis= 0)
+    dfi.export(finalComparisonDF, os.path.join(weekSaveDir,'bestManager.png'))
+
+    def highlight_adds(cols, addedCountingStatsDict):
+
+
+        addedPlayerStats, weekTotalsDifference = addedCountingStatsDict[cols['manager']]
+        playerBoost = ['']
+        for c in range(len(cols[1:])):
+            if c == len(addedPlayerStats) - 1:
+                # you already won the week, nice job
+                if weekTotalsDifference[c] < 0 :
+                    playerBoost.append('background: green')
+                # for the TO category, if the week total difference is more than the added players TOs
+                # removing them wouldn't make the difference negative for you to win
+                elif weekTotalsDifference[c] > addedPlayerStats[c]:
+                    playerBoost.append('background: yellow')
+
+                # in the opposite case, you added players whose TOs were more than the difference, so 
+                # you caused yourself to lose the week...
+                else:
+                    playerBoost.append('background: red')
+
+            else:
+                # if the week total is negative for the non-TO category,
+                # then you wouldn't have won with your adds
+                if weekTotalsDifference[c] < 0 :
+                    playerBoost.append('background: red')
+                # if you won the category, but the added player stats are less than this, you would've won anyways...
+                elif weekTotalsDifference[c] > addedPlayerStats[c]:
+                    playerBoost.append('background: yellow')
+                else:
+                    # difference closed with your adds
+                    playerBoost.append('background: green')
+
+        return playerBoost
+
+    finalAddsDF = addsDF[['manager', 'teamName', 'opponent', 'matchupNumber', 'adds'] + countingStats]
+    finalAddsDF.sort_values(by='matchupNumber', inplace=True)
+    finalAddsDF = fix_names_teams(finalAddsDF)
+    finalAddsDF.to_csv(os.path.join(weekSaveDir,'addsComparison.csv'), index=False)
+    finalAddsDF = finalAddsDF.style.apply(highlight_adds, addedCountingStatsDict = addedCountingStatsDict, subset = ['manager'] + countingStats,axis= 1)
+    dfi.export(finalAddsDF, os.path.join(weekSaveDir,'addsComparison.png'))
