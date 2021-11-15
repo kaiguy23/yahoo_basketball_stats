@@ -114,24 +114,54 @@ def create_matchup_comparison(league, df, visualize=True, saveDir='matchup resul
         for j in range(df.shape[0]):
             # compare the rows aka matchups
             vsTeam = df.loc[j]
-
-            # compute score of the curTeam against the vs Team
-            curScore = sum(curTeam[nonTOs]>vsTeam[nonTOs]) + int(curTeam[TOs]<vsTeam[TOs])
-            vsScore = len(statCats) - curScore
-            matchupScore[i,j] = f'{curScore}-{vsScore}'
-            matchupScore[j,i] = f'{vsScore}-{curScore}'
-            matchupWinner[i,j] = curScore > vsScore
-            matchupWinner[j,i] = vsScore > curScore
+            curScore = 0
+            vsScore = 0
+            tieScore = 0
+            for cat in nonTOs:
+                if curTeam[cat]>vsTeam[cat]:
+                    curScore += 1
+                elif curTeam[cat]<vsTeam[cat]:
+                    vsScore += 1
+                # tie case
+                else:
+                    tieScore += 1
+            if curTeam[TOs]<vsTeam[TOs]:
+                curScore += 1
+            elif curTeam[TOs]>vsTeam[TOs]:
+                vsScore += 1
+            # tie case
+            else:
+                tieScore += 1
+            if tieScore > 0:
+                matchupScore[i,j] = f'{curScore}-{vsScore}-{tieScore}'
+            else:
+                matchupScore[i,j] = f'{curScore}-{vsScore}'
+            if curScore > vsScore:
+                matchupWinner[i,j] = 1
+            elif vsScore > curScore:
+                matchupWinner[i,j] = 0
+            # tie case
+            else:
+                matchupWinner[i,j]= .5
 
     # get diagonal indices and turn them off
     idxs = np.diag_indices(df.shape[0])
 
     # 0 them out before doing the biggest winners / losers
     matchupWinner[idxs] = 0
-    df['totalWins'] = matchupWinner.sum(axis=1)
+    matchupWinnerCopy = matchupWinner.copy()
+    matchupWinnerCopy[matchupWinnerCopy!=1] = 0
+    df['totalWins'] = matchupWinnerCopy.sum(axis=1)
 
     # subtract 1 since you can't play yourself
-    df['totalLosses'] = df.shape[0] - 1 - df['totalWins']
+    matchupWinnerCopy = matchupWinner.copy()
+    matchupWinnerCopy[matchupWinnerCopy!=0] = 1
+    df['totalLosses'] = (1-matchupWinnerCopy).sum(axis=1) - 1
+    # tie case
+    matchupWinnerCopy = matchupWinner.copy()
+    matchupWinnerCopy[matchupWinnerCopy!=.5] = 0
+    matchupWinnerCopy[matchupWinnerCopy==.5] = 1
+    df['totalTies'] = matchupWinnerCopy.sum(axis=1)
 
     # set the diagonals idxs
     matchupWinner[idxs] = -1
@@ -147,7 +177,7 @@ def create_matchup_comparison(league, df, visualize=True, saveDir='matchup resul
 
         # save out the dataframe
         df.to_csv(os.path.join(weekSaveDir,'matchupTotals.csv'),index=False)
-        dfi.export(df[['manager', 'teamName','totalWins','totalLosses']], os.path.join(weekSaveDir,'matchupTotalsTable.png'))
+        dfi.export(df[['manager', 'teamName','totalWins','totalLosses', 'totalTies']], os.path.join(weekSaveDir,'matchupTotalsTable.png'))
 
         # set colors so that black = -1 / N/A, red = 0 / Loss, green = 1 / Win
         colors = ['black','red','green']
