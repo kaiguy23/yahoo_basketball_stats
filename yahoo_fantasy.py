@@ -297,26 +297,28 @@ def max_min_stats(league, df, visualize=True, saveDir='matchup results'):
 
     # compute the highest per category
     maxStatList = []
-    maxCats = df.loc[df[statCats].idxmax()]
-    maxCats.reset_index(drop=True,inplace=True)
-    for idx, row in maxCats.iterrows():
-        curCat = statCats[idx]
-        maxStatList.append([curCat, row[curCat], row['manager']])
+    maxCats = df[statCats].max()
+
+    for stat, val in maxCats.iteritems():
+        managers = df.loc[df[stat]==val, 'manager']
+        managers = ', '.join(managers.to_list())
+        maxStatList.append([stat, val, managers])
 
     # save out the data
-    maxStatDF = pd.DataFrame(maxStatList, columns = ['Stat', 'Value', 'Manager'])
+    maxStatDF = pd.DataFrame(maxStatList, columns = ['Stat', 'Value', 'Manager(s)'])
     maxStatDF.to_csv(os.path.join(weekSaveDir,'maxStats.csv'),index=False)
 
     # compute lowest per category
     minStatList = []
-    minCats = df.loc[df[statCats].idxmin()]
-    minCats.reset_index(drop=True,inplace=True)
-    for idx, row in minCats.iterrows():
-        curCat = statCats[idx]
-        minStatList.append([curCat, row[curCat], row['manager']])
+    minCats = df[statCats].min()
+
+    for stat, val in minCats.iteritems():
+        managers = df.loc[df[stat]==val, 'manager']
+        managers = ', '.join(managers.to_list())
+        minStatList.append([stat, val, managers])
 
     # save out the data
-    minStatDF = pd.DataFrame(minStatList, columns = ['Stat', 'Value', 'Manager'])
+    minStatDF = pd.DataFrame(minStatList, columns = ['Stat', 'Value', 'Manager(s)'])
     minStatDF.to_csv(os.path.join(weekSaveDir,'minStats.csv'),index=False)
 
     if visualize:
