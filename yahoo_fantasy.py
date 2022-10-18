@@ -54,8 +54,16 @@ def extract_matchup_scores(league, week):
             fg = teamStats[0]['stat']['value'].split('/')
             ft = teamStats[2]['stat']['value'].split('/')
             teamStats = [teamStats[1]] + teamStats[3:]
-            labeledStats = {statNames:float(statValues['stat']['value'])
-                        for statNames,statValues in zip(statCats,teamStats)}
+            labeledStats = {statNames: float(statValues['stat']['value']) if statValues['stat']['value'] else 0
+                    for statNames,statValues in zip(statCats,teamStats)}
+            if fg[0] == '':
+                fg[0] = 0
+            if fg[1] == '':
+                fg[1] = 0    
+            if ft[0] == '':
+                ft[0] = 0
+            if ft[1] == '':
+                ft[1] = 0    
             labeledStats['FGM'] = float(fg[0])
             labeledStats['FGA'] = float(fg[1])
             labeledStats['FTM'] = float(ft[0])
@@ -67,7 +75,11 @@ def extract_matchup_scores(league, week):
 
     # once we have all the stats, make a dataframe for the comparison
     df = pd.DataFrame(matchupStats)
-
+    # update the % categories to have more than 3 decimal 
+    df['FG%'] = df['FGM']/df['FGA']
+    df['FT%'] = df['FTM']/df['FTA']
+    df.loc[df['FGA']==0, 'FG%'] = 0
+    df.loc[df['FTA']==0, 'FT%'] = 0
     # save the week as the dataframe name
     df.name = week
     return df
@@ -117,7 +129,7 @@ def create_matchup_comparison(league, df, visualize=True, saveDir='matchup resul
             curScore = 0
             vsScore = 0
             tieScore = 0
-            for cat in nonTOs:
+            for cat in nonTOs:         
                 if curTeam[cat]>vsTeam[cat]:
                     curScore += 1
                 elif curTeam[cat]<vsTeam[cat]:
@@ -643,7 +655,7 @@ if __name__ == '__main__':
                 # for the TO category, if the week total difference is more than the added players TOs
                 # removing them wouldn't make the difference negative for you to win
                 elif weekTotalsDifference[c] > addedPlayerStats[c]:
-                    playerBoost.append('background: yellow')
+                    playerBoost.append('background: white')
 
                 # in the opposite case, you added players whose TOs were more than the difference, so 
                 # you caused yourself to lose the week...
@@ -654,10 +666,10 @@ if __name__ == '__main__':
                 # if the week total is negative for the non-TO category,
                 # then you wouldn't have won with your adds
                 if weekTotalsDifference[c] < 0 :
-                    playerBoost.append('background: red')
+                    playerBoost.append('background: white')
                 # if you won the category, but the added player stats are less than this, you would've won anyways...
                 elif weekTotalsDifference[c] > addedPlayerStats[c]:
-                    playerBoost.append('background: yellow')
+                    playerBoost.append('background: white')
                 else:
                     # difference closed with your adds
                     playerBoost.append('background: green')
@@ -667,6 +679,36 @@ if __name__ == '__main__':
     finalAddsDF = addsDF[['manager', 'teamName', 'opponent', 'matchupNumber', 'adds'] + countingStats]
     finalAddsDF.sort_values(by='matchupNumber', inplace=True)
     finalAddsDF = fix_names_teams(finalAddsDF)
-    finalAddsDF.to_csv(os.path.join(weekSaveDir,'addsComparison.csv'), index=False)
+    
+    
+    finalAddsDF.to_csv(os.path.join(weekSaveDir,'differenceAddsComparison.csv'), index=False)
     finalAddsDF = finalAddsDF.style.apply(highlight_adds, addedCountingStatsDict = addedCountingStatsDict, subset = ['manager'] + countingStats,axis= 1)
+    dfi.export(finalAddsDF, os.path.join(weekSaveDir,'differenceAddsComparison.png'))
+    
+    finalComparisonDF = teamDF[['manager', 'teamName', 'adds'] + countingStats + countingResultsCols]
+    finalComparisonDF = fix_names_teams(finalComparisonDF)
+    
+    finalAddsDF = finalComparisonDF.style.apply(highlight_adds, addedCountingStatsDict = addedCountingStatsDict, subset = ['manager'] + countingStats,axis= 1)
     dfi.export(finalAddsDF, os.path.join(weekSaveDir,'addsComparison.png'))
+
+
+    import glob
+    files = glob.glob(r'C:\Users\Kai\OneDrive\Documents\code\yahoo_basketball_stats\matchup results/*/matchupTotals.csv')
+    data = {}
+    for f in files:
+        df = pd.read_csv(f)
+        for idx, row in df.iterrows():
+            if row['manager'] not in data:
+                data[row['manager']] = {}
+                data[row['manager']]['wins'] = 0
+                data[row['manager']]['losses'] = 0
+                data[row['manager']]['ties'] = 0
+                
+            data[row['manager']]['wins'] += row['totalWins']
+            data[row['manager']]['losses'] += row['totalLosses']
+            if 'totalTies' in row:
+                data[row['manager']]['ties'] += row['totalTies']
+    df = pd.DataFrame(data).T
+    df.sort_values(by='wins',ascending=False, inplace=True)
+    dfi.export(df, os.path.join(weekSaveDir,'totalStandings.png'))
+    df.to_csv(os.path.join(weekSaveDir,'totalStandings.csv'), index=False)
