@@ -6,13 +6,102 @@ from matplotlib.patches import Rectangle
 import matplotlib.pyplot as plt
 import datetime
 import seaborn as sn
-import pprint
 import json
 import yaml
 import dataframe_image as dfi
+import glob
 
 from yahoo_oauth import OAuth2
 import yahoo_fantasy_api as yfa
+
+
+def highlight_adds(cols, addedCountingStatsDict):
+    """
+    highlights the adds in the dataframe based on if your adds helped you
+
+    Parameters
+    ----------
+    cols : list
+         columns of categories to highlight
+    addedCountingStatsDict : dict
+         stats from adds
+
+    Returns
+    -------
+    playerBoost : list
+         colors based on if your adds helped you
+
+    """
+    addedPlayerStats, weekTotalsDifference = addedCountingStatsDict[cols['manager']]
+    playerBoost = ['']
+    for c in range(len(cols[1:])):
+        if c == len(addedPlayerStats) - 1:
+            # you already won the week, nice job
+            if weekTotalsDifference[c] < 0 :
+                playerBoost.append('background: green')
+            # for the TO category, if the week total difference is more than the added players TOs
+            # removing them wouldn't make the difference negative for you to win
+            elif weekTotalsDifference[c] > addedPlayerStats[c]:
+                playerBoost.append('background: white')
+
+            # in the opposite case, you added players whose TOs were more than the difference, so 
+            # you caused yourself to lose the week...
+            else:
+                playerBoost.append('background: red')
+
+        else:
+            # if the week total is negative for the non-TO category,
+            # then you wouldn't have won with your adds
+            if weekTotalsDifference[c] < 0 :
+                playerBoost.append('background: white')
+            # if you won the category, but the added player stats are less than this, you would've won anyways...
+            elif weekTotalsDifference[c] > addedPlayerStats[c]:
+                playerBoost.append('background: white')
+            else:
+                # difference closed with your adds
+                playerBoost.append('background: green')
+
+    return playerBoost
+
+def generate_total_standings(yearResultsDir, weekSaveDir):
+    """
+    generate the total standings based on everyone vs everyone
+    for the whole season
+
+
+    Parameters
+    ----------
+    yearResultsDir : str
+         directory with results for the current year
+    weekSaveDir : str
+         directory with results for the current week
+
+    Returns
+    -------
+    df : pandas dataframe
+        contains total standings for the year
+
+    """
+    files = glob.glob(os.path.join(yearResultsDir, '*/matchupTotals.csv'))
+    data = {}
+    for f in files:
+        df = pd.read_csv(f)
+        for idx, row in df.iterrows():
+            if row['manager'] not in data:
+                data[row['manager']] = {}
+                data[row['manager']]['wins'] = 0
+                data[row['manager']]['losses'] = 0
+                data[row['manager']]['ties'] = 0
+                
+            data[row['manager']]['wins'] += row['totalWins']
+            data[row['manager']]['losses'] += row['totalLosses']
+            if 'totalTies' in row:
+                data[row['manager']]['ties'] += row['totalTies']
+    df = pd.DataFrame(data).T
+    df.sort_values(by='wins',ascending=False, inplace=True)
+    dfi.export(df, os.path.join(weekSaveDir,'totalStandings.png'))
+    df.to_csv(os.path.join(weekSaveDir,'totalStandings.csv'), index=False)
+    return df
 
 def extract_matchup_scores(league, week):
     """
@@ -396,7 +485,7 @@ def get_team_ids(sc, league):
 
     return teamDF
 
-def refresh_oauth_file(oauthFile = 'yahoo_oauth.json', sport = 'nba', year = 2021, refresh = False):
+def refresh_oauth_file(oauthFile = 'yahoo_oauth.json', sport = 'nba', year = 2022, refresh = False):
     """
     refresh the json file with your consumer secret and consumer key 
 
@@ -408,7 +497,7 @@ def refresh_oauth_file(oauthFile = 'yahoo_oauth.json', sport = 'nba', year = 202
     sport : str, optional
         league for the stats you want. The default is 'nba'
     year: int, optional
-        year of the league you want. The default is 2021
+        year of the league you want. The default is 2022
     refresh: bool, optional
         flag to use if you want to refresh your oauth key. This is done by deleting the other
         variables in the given oauthFile. The default is false.
@@ -469,27 +558,30 @@ def refresh_oauth_file(oauthFile = 'yahoo_oauth.json', sport = 'nba', year = 202
 
 if __name__ == '__main__':
 
-    sc, gm, curLg2021 = refresh_oauth_file(oauthFile = 'yahoo_oauth.json')
+    sc, gm, curLg = refresh_oauth_file(oauthFile = 'yahoo_oauth.json')
 
     # for each previous week (don't include the current one)
     # yahoo week index starts at 1 so make sure to start looping at 1
-    # for week in range(2,curLg2021.current_week()):
-    week = curLg2021.current_week()
+    # for week in range(2,curLg.current_week()):
+    week = curLg.current_week()
+
+    # set up the save directory for results
+    saveDir=os.path.join('matchup results', '2022-2023')
+    weekSaveDir = os.path.join(saveDir, f'week{week}')
+    os.makedirs(weekSaveDir,exist_ok=True)
+
     # # get the current week matchup stats
-    df = extract_matchup_scores(curLg2021, week)
+    df = extract_matchup_scores(curLg, week)
     # calculate matchups
-    df, matchupScore, matchupWinner = create_matchup_comparison(curLg2021, df)
+    df, matchupScore, matchupWinner = create_matchup_comparison(curLg, df)
     # also compute the highest/lowest per category
-    maxStatDF, minStatDF = max_min_stats(curLg2021, df)
-
-
-    # continue
+    maxStatDF, minStatDF = max_min_stats(curLg, df)
 
     # get stat categories we care about
-    statCats = curLg2021.stat_categories()
+    statCats = curLg.stat_categories()
     statCats = [statNames['display_name'] for statNames in statCats]
-    teamDF = get_team_ids(sc, curLg2021)
-    startDate, endDate = curLg2021.week_date_range(week)
+    teamDF = get_team_ids(sc, curLg)
+    startDate, endDate = curLg.week_date_range(week)
     dateDiff = endDate - startDate
     # get the date ranges with a timestamp of 11:59:59 PM; that way the day has ended
     # so all of the players in non-bench positions with a game will have played
@@ -529,7 +621,7 @@ if __name__ == '__main__':
             startedPlayerIDs.extend(teamDF.loc[idx,previousSunday]['player_id'].to_list())
         # get the stats of the unique players
         startedPlayerIDs = list(set(startedPlayerIDs))
-        playerStats = curLg2021.player_stats(startedPlayerIDs, 'date', date = currentDate)
+        playerStats = curLg.player_stats(startedPlayerIDs, 'date', date = currentDate)
         playerStats = pd.DataFrame(playerStats)
         # get the players who actually had games, ignore the player if all stat entries are '-'
         playerStats = playerStats.loc[ ~(playerStats[statCats] == ['-']*9).all(axis=1)]
@@ -569,7 +661,7 @@ if __name__ == '__main__':
                     teamDF.loc[idx,'rosterTotals'].loc[roster['player_id']==d,'dropped'] = True
         
 
-    df = extract_matchup_scores(curLg2021, week)
+    df = extract_matchup_scores(curLg, week)
     # get the non-% cats: yahoo doesn't give the FTA/FTM and FGA/FGM values...
     countingStats = statCats[2:]
     teamDF[countingStats] = 0
@@ -632,49 +724,10 @@ if __name__ == '__main__':
     
     finalComparisonDF = teamDF[['manager', 'teamName', 'adds'] + countingStats + countingResultsCols]
 
-    saveDir='matchup results'
-    weekSaveDir = os.path.join(saveDir, f'week{week}')
-    os.makedirs(weekSaveDir,exist_ok=True)
-
-
     finalComparisonDF = fix_names_teams(finalComparisonDF)
     finalComparisonDF.to_csv(os.path.join(weekSaveDir,'bestManager.csv'), index=False)
     finalComparisonDF = finalComparisonDF.style.apply(highlight_max_and_min_cols,subset = countingStats,axis= 0)
     dfi.export(finalComparisonDF, os.path.join(weekSaveDir,'bestManager.png'))
-
-    def highlight_adds(cols, addedCountingStatsDict):
-
-
-        addedPlayerStats, weekTotalsDifference = addedCountingStatsDict[cols['manager']]
-        playerBoost = ['']
-        for c in range(len(cols[1:])):
-            if c == len(addedPlayerStats) - 1:
-                # you already won the week, nice job
-                if weekTotalsDifference[c] < 0 :
-                    playerBoost.append('background: green')
-                # for the TO category, if the week total difference is more than the added players TOs
-                # removing them wouldn't make the difference negative for you to win
-                elif weekTotalsDifference[c] > addedPlayerStats[c]:
-                    playerBoost.append('background: white')
-
-                # in the opposite case, you added players whose TOs were more than the difference, so 
-                # you caused yourself to lose the week...
-                else:
-                    playerBoost.append('background: red')
-
-            else:
-                # if the week total is negative for the non-TO category,
-                # then you wouldn't have won with your adds
-                if weekTotalsDifference[c] < 0 :
-                    playerBoost.append('background: white')
-                # if you won the category, but the added player stats are less than this, you would've won anyways...
-                elif weekTotalsDifference[c] > addedPlayerStats[c]:
-                    playerBoost.append('background: white')
-                else:
-                    # difference closed with your adds
-                    playerBoost.append('background: green')
-
-        return playerBoost
 
     finalAddsDF = addsDF[['manager', 'teamName', 'opponent', 'matchupNumber', 'adds'] + countingStats]
     finalAddsDF.sort_values(by='matchupNumber', inplace=True)
@@ -692,23 +745,5 @@ if __name__ == '__main__':
     dfi.export(finalAddsDF, os.path.join(weekSaveDir,'addsComparison.png'))
 
 
-    import glob
-    files = glob.glob(r'C:\Users\Kai\OneDrive\Documents\code\yahoo_basketball_stats\matchup results/*/matchupTotals.csv')
-    data = {}
-    for f in files:
-        df = pd.read_csv(f)
-        for idx, row in df.iterrows():
-            if row['manager'] not in data:
-                data[row['manager']] = {}
-                data[row['manager']]['wins'] = 0
-                data[row['manager']]['losses'] = 0
-                data[row['manager']]['ties'] = 0
-                
-            data[row['manager']]['wins'] += row['totalWins']
-            data[row['manager']]['losses'] += row['totalLosses']
-            if 'totalTies' in row:
-                data[row['manager']]['ties'] += row['totalTies']
-    df = pd.DataFrame(data).T
-    df.sort_values(by='wins',ascending=False, inplace=True)
-    dfi.export(df, os.path.join(weekSaveDir,'totalStandings.png'))
-    df.to_csv(os.path.join(weekSaveDir,'totalStandings.csv'), index=False)
+    generate_total_standings(saveDir, weekSaveDir)
+
