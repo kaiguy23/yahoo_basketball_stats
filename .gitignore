@@ -127,3 +127,12 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# local folder with results
+matchup_results/
+*png
+*csv
+
+# skip yahoo_keys and oauth json
+*txt
+*json
