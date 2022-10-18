@@ -82,7 +82,7 @@ def generate_total_standings(yearResultsDir, weekSaveDir):
         contains total standings for the year
 
     """
-    files = glob.glob(os.path.join(yearResultsDir, '*/matchupTotals.csv'))
+    files = glob.glob(os.path.join(yearResultsDir, '*', 'matchupTotals.csv'))
     data = {}
     for f in files:
         df = pd.read_csv(f)
