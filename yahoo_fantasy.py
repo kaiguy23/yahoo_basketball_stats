@@ -575,7 +575,7 @@ if __name__ == '__main__':
     # calculate matchups
     df, matchupScore, matchupWinner = create_matchup_comparison(curLg, df)
     # also compute the highest/lowest per category
-    maxStatDF, minStatDF = max_min_stats(curLg, df)
+    maxStatDF, minStatDF = max_min_stats(curLg, df, saveDir)
 
     # get stat categories we care about
     statCats = curLg.stat_categories()
