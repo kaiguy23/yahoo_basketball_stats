@@ -357,7 +357,7 @@ dependencies:
     - objectpath==0.6.1
     - pyaml==21.10.1
     - rauth==0.7.3
-    - yahoo-fantasy-api==2.4.1
+    - yahoo-fantasy-api==2.6.0
     - yahoo-oauth==1.1
     - yarl==1.7.0
 prefix: C:\ProgramData\Anaconda3\envs\yahoo_basketball
