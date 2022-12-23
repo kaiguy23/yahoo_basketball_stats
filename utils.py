@@ -10,7 +10,7 @@ from yahoo_oauth import OAuth2
 import yahoo_fantasy_api as yfa
 
 
-from nba_api.stats.endpoints import playergamelogs
+from nba_api.stats.endpoints import playergamelogs, playercareerstats
 from nba_api.stats.static.players import find_players_by_first_name, find_players_by_full_name, find_players_by_last_name
 from nba_api.stats.endpoints import scoreboard
 
@@ -63,26 +63,116 @@ def num_games_played(start_date, end_date):
         end_date (datetime obj): end date
     """
     # Build dictionary of teams and how many games they've played
+    games_played = {}
     for date in pd.date_range(start_date, end_date, freq='D'):
+        game_date=date.strftime("%m/%d/%Y")
+        try:
+            sb = scoreboard.Scoreboard(game_date=game_date)
+            teams = sb.get_data_frames()[1]["TEAM_ABBREVIATION"].values
+            for t in teams:
+                if t in games_played:
+                    games_played[t]+=1
+                else:
+                    games_played[t] = 1
+        except:
+            print("no games on", game_date)
+    return games_played
 
-        d = scoreboard.Scoreboard(game_date=date.strftime("DD/MM/YYYY"))
-        d.get_data_frames()[1]["TEAM"]
 
-
-def get_all_taken_players_extra():
+def num_games_played_per_week(league, week):
     """
-    Returns a list of all taken players, with entries appended
+    Returns a dictionary that says how many games each nba 
+    team plays in each given week of the league
+
+    Args:
+        league: yahoo api league object
+    """
+    # Build dictionary of teams and how many games they've played
+    start_date, end_date = league.week_date_range(week)
+    return num_games_played(start_date, end_date)
+
+
+def get_all_taken_players_extra(sc, league, week):
+    """
+    Returns a dictionary of all taken players, with entries appended
     for:
         1) which NBA team they're on
         2) which fantasy team they're on 
         3) what position they are currently placed on for fantasy (to check if they're on IL)
-        4) how many games they have remaining in each of the remaining weeks
+        4) how many games they have played already this week
+        5) how many games total they have on the calendar for this week
+        6) nba api name
+    
+    Args:
+        sc: yahoo oauth object
+        league: yahoo api league object
+        week: int yahoo week to return number of games for
+
     """
 
     # Get all the players currently on teams
     tp = league.taken_players()
 
+    # Get games played information for nba teams
+    this_week = num_games_played_per_week(league, week)
+    if TODAY > league.week_date_range(week)[0]:
+        up_today = num_games_played(league.week_date_range(week)[0], TODAY)
+    else:
+        up_today = {}
+    for t in this_week:
+        if t not in up_today:
+            up_today[t] = 0
 
+    # get the roster for all the teams in the fantasy league for today
+    # key is player name goes to teamID, manager, teamName, status, position_type, eligible_positions, and selected_position
+    rosters = {}
+    teamDF = get_team_ids(sc, league)
+    for i,row in teamDF.iterrows():
+        team_roster = row['teamObject'].roster()
+        for p in team_roster:
+            name = p['name']
+            info = {}
+            for k in p:
+                info[k] = p[k]
+            info['teamID'] = row['teamID']
+            info['manager'] = row['manager']
+            info['teamName'] = row['teamName']
+            rosters[name] = info
+
+    # Get player logs to determine team
+    logs = get_all_player_logs()
+    players = {}
+    for p in tp:
+        name = yahoo_to_nba_name(p['name'])
+        entry = {}
+        entry['yahoo_name'] = p['name']
+        entry['nba_name'] = name
+
+        # Catch Inactive all year players
+        try:
+            entry['nba_team'] = logs.get_group(name)["TEAM_ABBREVIATION"].iloc[0]
+        except:
+            # Hard code never played CHET
+            if name == 'Chet Holmgren':
+                entry['nba_team'] = 'OKC'
+            else:
+                player_id = find_players_by_full_name(name)[0]['id']
+                career = playercareerstats.PlayerCareerStats(player_id=player_id).get_data_frames()[0].sort_values("PLAYER_AGE")
+                entry['nba_team'] = career.iloc[-1]["TEAM_ABBREVIATION"][-3:]
+
+        entry['games_total'] = this_week[entry['nba_team']]
+        entry['games_played'] = up_today[entry['nba_team']]
+        entry['manager'] = rosters[p['name']]['manager']
+        entry['fantasy_team'] = rosters[p['name']]['teamName']
+        entry['selected_position'] = rosters[p['name']]['selected_position']
+        entry['eligible_positions'] = rosters[p['name']]['eligible_positions']
+        entry['status'] = rosters[p['name']]['status']
+        players[name] = entry
+
+    return players
+
+
+    
 def get_all_player_logs(season=DEFAULT_SEASON):
     """
     Returns a pandas groupby object that maps player name to
@@ -225,3 +315,7 @@ def refresh_oauth_file(oauthFile = 'yahoo_oauth.json', sport = 'nba', year = 202
 
     return sc, gm, currentLeague
 
+
+if __name__ == "__main__":
+    sc, gm, curLg = refresh_oauth_file(oauthFile = 'yahoo_oauth.json')
+    tp = get_all_taken_players_extra(sc, curLg, curLg.current_week())
