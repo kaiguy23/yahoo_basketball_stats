@@ -14,6 +14,8 @@ import glob
 from yahoo_oauth import OAuth2
 import yahoo_fantasy_api as yfa
 
+from utils import refresh_oauth_file, fix_names_teams, get_team_ids
+
 
 def highlight_adds(cols, addedCountingStatsDict):
     """
@@ -307,36 +309,7 @@ def create_matchup_comparison(league, df, visualize=True, saveDir='matchup resul
 
     return df, matchupScore, matchupWinner
 
-def fix_names_teams(df):
-    """
-    edits the dataframe's teamName and manager columns so we can save them our correctly
-    
 
-    Parameters
-    ----------
-    df : pandas dataframe
-        contains teamName and manager columns.
-
-    Returns
-    -------
-    df : pandas dataframe
-        modified dataframe.
-
-    """
-    for idx, row in df.iterrows():
-        manager = row['manager']
-        team = row['teamName']
-        newManager = ''
-        newTeam = ''
-        for char in manager:
-            if char.isalnum() or char == ' ' or char == '-':
-                newManager += char
-        for char in team:
-            if char.isalnum() or char == ' ' or char == '-':
-                newTeam += char
-        df.loc[idx, 'manager'] = newManager
-        df.loc[idx, 'teamName'] = newTeam
-    return df
 
 def highlight_max_and_min_cols(row):
     """
@@ -457,104 +430,6 @@ def max_min_stats(league, df, visualize=True, saveDir='matchup results'):
 
     return maxStatDF, minStatDF
 
-def get_team_ids(sc, league):
-    """
-    get the team id, manager, team name, and team object for each team in the league
-
-
-    Parameters
-    ----------
-    sc: class
-         yahoo oauth object.
-    league : class
-        yahoo_fantasy_api.league.League.
-
-    Returns
-    -------
-    teamDF : pandas dataframe
-        contains the team id, manager, team name for each team, and team object
-
-    """
-    # extract team info from league
-    teams = league.teams()
-    teamInfo = [[teamID, item['managers'][0]['manager']['nickname'], item['name'], yfa.Team(sc,teamID)]
-                for teamID, item in teams.items()]
-
-    # construct dataframe
-    teamDF = pd.DataFrame(teamInfo, columns = ['teamID', 'manager','teamName', 'teamObject'])
-
-    return teamDF
-
-def refresh_oauth_file(oauthFile = 'yahoo_oauth.json', sport = 'nba', year = 2022, refresh = False):
-    """
-    refresh the json file with your consumer secret and consumer key 
-
-
-    Parameters
-    ----------
-    oauthFile: str, optional
-         file path to file with consumer key and consumer secret. The default is 'yahoo_oauth.json'.
-    sport : str, optional
-        league for the stats you want. The default is 'nba'
-    year: int, optional
-        year of the league you want. The default is 2022
-    refresh: bool, optional
-        flag to use if you want to refresh your oauth key. This is done by deleting the other
-        variables in the given oauthFile. The default is false.
-
-    Returns
-    -------
-    sc : class
-        yahoo_oauth object.
-    gm : class
-        nba fantasy group
-    currentLeague: class
-        league for the given year
-
-    """
-    if refresh:
-        ext = os.path.splitext(oauthFile)[1]
-
-        # load in the file
-        if ext =='.json':
-            # read the current json file
-            with open(oauthFile, 'r') as f:
-                oauthKeys = json.load(f)
-        elif ext =='.yaml':
-            # read the current json file
-            with open(oauthFile, 'r') as f:
-                oauthKeys = yaml.safe_load(f)
-        else:
-            raise ValueError('Wrong file format for yahoo oauth keys. Please use json or yaml')
-
-        # make a new dictionary with the consumer key and consumer secret variables
-        newKeys = {}
-        newKeys['consumer_key'] = oauthKeys['consumer_key']
-        newKeys['consumer_secret'] = oauthKeys['consumer_secret']
-
-        # delete the original json file before writing a new one
-        os.remove(oauthFile)
-
-        # save out the new keys to the original file
-        with open(oauthFile, 'w') as f:
-            if ext =='.json':
-                json.dump(newKeys, f)
-            elif ext == '.yaml':
-                yaml.dump(newKeys, f)
-
-    # set up authenication
-    sc = OAuth2(None, None, from_file=oauthFile)
-
-    # get the nba fantasy group
-    gm = yfa.Game(sc, sport)
-
-    # get the current nba fantasy league
-    league = gm.league_ids(year=year)
-
-    # get the current league stats based on the current year id
-    currentLeague = gm.to_league(league[0])
-
-    return sc, gm, currentLeague
 
 if __name__ == '__main__':
 

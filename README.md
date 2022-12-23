@@ -34,7 +34,9 @@ https://developer.yahoo.com/apps/create/
 
 For our purposes, the Homepage URL and Redirect URI(s) do not matter, but Redirect URI(s) is required. You can simply put your local host as the Redirect URI (https://localhost:8001).
 
-When you create the app, there will be a Client ID  (Consumer Key) and Client Secret (Consumer Secret) listed. Create a json or yaml file with these values.
+Select confidential client.
+
+When you create the app, there will be a Client ID  (Consumer Key) and Client Secret (Consumer Secret) listed. DO NOT copy the App ID. Create a json file titled yahoo_oauth.json:
 
 ```json
 {
