@@ -103,7 +103,7 @@ def project_stats_team(players, all_stats):
 
 
 
-def predicted_total_stats(players, all_stats):
+def predicted_total_stats(players, all_stats, num_games=None):
     """
     Returns the predicted total stats for a group of players
 
@@ -117,7 +117,10 @@ def predicted_total_stats(players, all_stats):
     for p in players:
         name = players[p]['nba_name']
         for s in CORE_STATS:
-            total_stats[s] += all_stats[name][s]*(players[p]["games_total"]-players[p]["games_played"])
+            if num_games is None:
+                total_stats[s] += all_stats[name][s]*(players[p]["games_total"]-players[p]["games_played"])
+            else:
+                total_stats[s] += all_stats[name][s]*num_games
 
     return total_stats
 
