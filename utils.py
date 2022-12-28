@@ -99,7 +99,7 @@ def get_all_taken_players_extra(sc, league, week):
         1) which NBA team they're on
         2) which fantasy team they're on 
         3) what position they are currently placed on for fantasy (to check if they're on IL)
-        4) how many games they have played already this week
+        4) how many games they have played already this week (does not count games today)
         5) how many games total they have on the calendar for this week
         6) nba api name
     
@@ -116,7 +116,7 @@ def get_all_taken_players_extra(sc, league, week):
     # Get games played information for nba teams
     this_week = num_games_played_per_week(league, week)
     if TODAY > league.week_date_range(week)[0]:
-        up_today = num_games_played(league.week_date_range(week)[0], TODAY)
+        up_today = num_games_played(league.week_date_range(week)[0], TODAY-1)
     else:
         up_today = {}
     for t in this_week:
@@ -145,7 +145,7 @@ def get_all_taken_players_extra(sc, league, week):
     for p in tp:
         name = yahoo_to_nba_name(p['name'])
         entry = {}
-        entry['yahoo_name'] = p['name']
+        entry['name'] = p['name']
         entry['nba_name'] = name
 
         # Catch Inactive all year players

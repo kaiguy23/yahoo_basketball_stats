@@ -7,7 +7,7 @@ import pandas as pd
 
 from yahoo_oauth import OAuth2
 import yahoo_fantasy_api as yfa
-from utils import get_all_player_logs, refresh_oauth_file, fix_names_teams, get_team_ids, yahoo_to_nba_name
+from utils import get_all_player_logs, refresh_oauth_file, fix_names_teams, get_team_ids, yahoo_to_nba_name, get_all_taken_players_extra
 
 CORE_STATS = ['FGM', 'FGA', 'FG_PCT', 'FG3M', 'FG3A', 'FG3_PCT', 'FTM',
        'FTA', 'FT_PCT', 'OREB', 'DREB', 'REB', 'AST', 'TOV', 'STL', 'BLK','PTS','NBA_FANTASY_PTS']
@@ -21,7 +21,7 @@ def gkern_1sided(l, sig):
     gauss = np.exp(-0.5 * (x**2) / (sig**2))
     return gauss/np.sum(gauss)
 
-def return_all_taken_stats(league, sigma=10):
+def return_all_taken_stats(league, sigma=10, tp=None):
     """
     Returns average stats for all taken players (i.e. players on teams),
     weighting recent games more
@@ -39,15 +39,23 @@ def return_all_taken_stats(league, sigma=10):
     logs = get_all_player_logs()
 
     # Get all the players currently on teams
-    tp = league.taken_players()
+    if tp is None:
+        tp = league.taken_players()
+    
 
     # Build averaged stats for each player
     all_stats = {}
     for p in tp:
-        name = yahoo_to_nba_name(p['name'])
+
+        # Save lookup time if we already got the nba name
+        if 'nba_name' in tp[p].keys():
+            name = tp[p]['nba_name']
+        else:
+            name = yahoo_to_nba_name(tp[p]['name'])
         
 
         to_add = {}
+
         # Catch cases where people have players rostered
         # that haven't played yet this season
         try:
@@ -63,8 +71,37 @@ def return_all_taken_stats(league, sigma=10):
 
     return all_stats
 
-def get_games_remaining(players, start_date, end_date):
-    return
+def project_stats_team(players, all_stats):
+    """
+    Projects the stats from unplayed games for the given week
+    that the players were generated from
+
+    Args:
+        players (_type_): _description_
+        all_stats (_type_): _description_
+    """
+
+
+    # loop through players to build teams
+    # each team is a dict mapping from 
+    # fantasy manager to a dictionary of players
+    # that are a subset of the players input
+    teams = {}
+    for p in players:
+        if players[p]['manager'] in teams:
+            teams[players[p]['manager']][p] = players[p]
+        else:
+            teams[players[p]['manager']] = {p:players[p]}
+
+    # loop through teams
+    projections = {}
+    for t in teams:
+        projections[t] = predicted_total_stats(teams[t], all_stats)
+
+    return projections
+
+
+
 
 def predicted_total_stats(players, all_stats):
     """
@@ -78,37 +115,16 @@ def predicted_total_stats(players, all_stats):
         total_stats[s] = 0
 
     for p in players:
-        name = yahoo_to_nba_name(p)
+        name = players[p]['nba_name']
         for s in CORE_STATS:
-            total_stats[s] += all_stats[name]*players[p] 
+            total_stats[s] += all_stats[name][s]*(players[p]["games_total"]-players[p]["games_played"])
 
     return total_stats
 
 if __name__ == "__main__":
     sc, gm, curLg = refresh_oauth_file(oauthFile = 'yahoo_oauth.json')
-    stats = return_all_taken_stats(curLg)
+    players = get_all_taken_players_extra(sc, curLg, curLg.current_week())
+    stats = return_all_taken_stats(curLg, tp=players)
+    proj = project_stats_team(players, stats)
 
-    teamDF = get_team_ids(sc, curLg)
-
-  
-    week = curLg.current_week()
-    startDate, endDate = curLg.week_date_range(week)
-    dateDiff = endDate - startDate
-
-    # get the date ranges with a timestamp of 11:59:59 PM; that way the day has ended
-    # so all of the players in non-bench positions with a game will have played
-    dateRanges = [datetime.datetime.combine(startDate + datetime.timedelta(days=d), datetime.time(23,59,59))
-                for d in range(dateDiff.days + 2)]
     
-    # get sunday from the week before as well to see if there were any add rights before the week started
-    previousSunday = datetime.datetime.combine(startDate - datetime.timedelta(days=1), datetime.time(23,59,59))
-
-    # get the roster for previous sunday
-    teamDF[previousSunday] = teamDF['teamObject'].apply(lambda teamObject: pd.DataFrame(teamObject.roster(day = previousSunday)))
-   
-
-    # loop through the days and get the roster for each day
-    for dIdx, currentDate in enumerate(dateRanges):
-        
-        # get the roster for the current date
-        currentRoster = teamDF['teamObject'].apply(lambda teamObject: pd.DataFrame(teamObject.roster(day = currentDate)))

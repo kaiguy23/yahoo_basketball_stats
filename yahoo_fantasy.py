@@ -438,7 +438,7 @@ if __name__ == '__main__':
     # for each previous week (don't include the current one)
     # yahoo week index starts at 1 so make sure to start looping at 1
     # for week in range(2,curLg.current_week()):
-    week = curLg.current_week()
+    week = curLg.current_week() - 1
 
     # set up the save directory for results
     saveDir=os.path.join('matchup results', '2022-2023')
@@ -471,6 +471,7 @@ if __name__ == '__main__':
         teamDF.loc[idx,previousSunday][statCats] = 0
     # loop through the days and get the roster for each day
     for dIdx, currentDate in enumerate(dateRanges):
+
         # get the roster for the current date
         currentRoster = teamDF['teamObject'].apply(lambda teamObject: pd.DataFrame(teamObject.roster(day = currentDate)))
 
