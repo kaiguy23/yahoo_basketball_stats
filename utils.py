@@ -316,6 +316,76 @@ def refresh_oauth_file(oauthFile = 'yahoo_oauth.json', sport = 'nba', year = 202
     return sc, gm, currentLeague
 
 
+def extract_matchup_scores(league, week):
+    """
+    extract the matchup stats for each person for the given week
+
+
+    Parameters
+    ----------
+    league : class
+         yahoo_fantasy_api.league.League
+    week : int
+         week to extract matchup data from.
+
+    Returns
+    -------
+    df : pandas dataframe
+        contains matchup stats for each person for a given week.
+
+    """
+    # parse the stat categories
+    statCats = league.stat_categories()
+    statCats = [statNames['display_name'] for statNames in statCats]
+
+    # get the current week
+    curWeek = league.matchups(week)['fantasy_content']['league'][1]['scoreboard']['0']['matchups']
+
+    # get each team in the matchup
+    matchupStats = []
+
+    # get stats for each matchup
+    for matchupNumber in range(curWeek['count']):
+        matchupNumber = str(matchupNumber)
+        curMatchup = curWeek[matchupNumber]['matchup']['0']['teams']
+        for team in range(curMatchup['count']):
+            team = str(team)
+            teamInfo, teamStats = curMatchup[team]['team']
+            teamStats = teamStats['team_stats']['stats']
+            # separate the FG/FT count stats
+            fg = teamStats[0]['stat']['value'].split('/')
+            ft = teamStats[2]['stat']['value'].split('/')
+            teamStats = [teamStats[1]] + teamStats[3:]
+            labeledStats = {statNames: float(statValues['stat']['value']) if statValues['stat']['value'] else 0
+                    for statNames,statValues in zip(statCats,teamStats)}
+            if fg[0] == '':
+                fg[0] = 0
+            if fg[1] == '':
+                fg[1] = 0    
+            if ft[0] == '':
+                ft[0] = 0
+            if ft[1] == '':
+                ft[1] = 0    
+            labeledStats['FGM'] = float(fg[0])
+            labeledStats['FGA'] = float(fg[1])
+            labeledStats['FTM'] = float(ft[0])
+            labeledStats['FTA'] = float(ft[1])
+            labeledStats['manager'] = teamInfo[-1]['managers'][0]['manager']['nickname']
+            labeledStats['teamName'] = teamInfo[2]['name']
+            labeledStats['matchupNumber'] = matchupNumber
+            matchupStats.append(labeledStats)
+
+    # once we have all the stats, make a dataframe for the comparison
+    df = pd.DataFrame(matchupStats)
+    # update the % categories to have more than 3 decimal 
+    df['FG%'] = df['FGM']/df['FGA']
+    df['FT%'] = df['FTM']/df['FTA']
+    df.loc[df['FGA']==0, 'FG%'] = 0
+    df.loc[df['FTA']==0, 'FT%'] = 0
+    # save the week as the dataframe name
+    df.name = week
+    return df
+
 if __name__ == "__main__":
     sc, gm, curLg = refresh_oauth_file(oauthFile = 'yahoo_oauth.json')
     tp = get_all_taken_players_extra(sc, curLg, curLg.current_week())

@@ -14,7 +14,7 @@ import glob
 from yahoo_oauth import OAuth2
 import yahoo_fantasy_api as yfa
 
-from utils import refresh_oauth_file, fix_names_teams, get_team_ids
+from utils import refresh_oauth_file, fix_names_teams, get_team_ids, extract_matchup_scores
 
 
 def highlight_adds(cols, addedCountingStatsDict):
@@ -105,75 +105,6 @@ def generate_total_standings(yearResultsDir, weekSaveDir):
     df.to_csv(os.path.join(weekSaveDir,'totalStandings.csv'), index=False)
     return df
 
-def extract_matchup_scores(league, week):
-    """
-    extract the matchup stats for each person for the given week
-
-
-    Parameters
-    ----------
-    league : class
-         yahoo_fantasy_api.league.League
-    week : int
-         week to extract matchup data from.
-
-    Returns
-    -------
-    df : pandas dataframe
-        contains matchup stats for each person for a given week.
-
-    """
-    # parse the stat categories
-    statCats = league.stat_categories()
-    statCats = [statNames['display_name'] for statNames in statCats]
-
-    # get the current week
-    curWeek = league.matchups(week)['fantasy_content']['league'][1]['scoreboard']['0']['matchups']
-
-    # get each team in the matchup
-    matchupStats = []
-
-    # get stats for each matchup
-    for matchupNumber in range(curWeek['count']):
-        matchupNumber = str(matchupNumber)
-        curMatchup = curWeek[matchupNumber]['matchup']['0']['teams']
-        for team in range(curMatchup['count']):
-            team = str(team)
-            teamInfo, teamStats = curMatchup[team]['team']
-            teamStats = teamStats['team_stats']['stats']
-            # separate the FG/FT count stats
-            fg = teamStats[0]['stat']['value'].split('/')
-            ft = teamStats[2]['stat']['value'].split('/')
-            teamStats = [teamStats[1]] + teamStats[3:]
-            labeledStats = {statNames: float(statValues['stat']['value']) if statValues['stat']['value'] else 0
-                    for statNames,statValues in zip(statCats,teamStats)}
-            if fg[0] == '':
-                fg[0] = 0
-            if fg[1] == '':
-                fg[1] = 0    
-            if ft[0] == '':
-                ft[0] = 0
-            if ft[1] == '':
-                ft[1] = 0    
-            labeledStats['FGM'] = float(fg[0])
-            labeledStats['FGA'] = float(fg[1])
-            labeledStats['FTM'] = float(ft[0])
-            labeledStats['FTA'] = float(ft[1])
-            labeledStats['manager'] = teamInfo[-1]['managers'][0]['manager']['nickname']
-            labeledStats['teamName'] = teamInfo[2]['name']
-            labeledStats['matchupNumber'] = matchupNumber
-            matchupStats.append(labeledStats)
-
-    # once we have all the stats, make a dataframe for the comparison
-    df = pd.DataFrame(matchupStats)
-    # update the % categories to have more than 3 decimal 
-    df['FG%'] = df['FGM']/df['FGA']
-    df['FT%'] = df['FTM']/df['FTA']
-    df.loc[df['FGA']==0, 'FG%'] = 0
-    df.loc[df['FTA']==0, 'FT%'] = 0
-    # save the week as the dataframe name
-    df.name = week
-    return df
 
 def create_matchup_comparison(league, df, visualize=True, saveDir='matchup results'):
     """
@@ -438,7 +369,7 @@ if __name__ == '__main__':
     # for each previous week (don't include the current one)
     # yahoo week index starts at 1 so make sure to start looping at 1
     # for week in range(2,curLg.current_week()):
-    week = curLg.current_week() - 1
+    week = curLg.current_week()
 
     # set up the save directory for results
     saveDir=os.path.join('matchup results', '2022-2023')
