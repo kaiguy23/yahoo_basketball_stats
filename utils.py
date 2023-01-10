@@ -64,19 +64,22 @@ def num_games_played(start_date, end_date):
     """
     # Build dictionary of teams and how many games they've played
     games_played = {}
+    dates = {}
     for date in pd.date_range(start_date, end_date, freq='D'):
         game_date=date.strftime("%m/%d/%Y")
         try:
             sb = scoreboard.Scoreboard(game_date=game_date)
             teams = sb.get_data_frames()[1]["TEAM_ABBREVIATION"].values
+            dates[date] = teams
             for t in teams:
                 if t in games_played:
                     games_played[t]+=1
                 else:
                     games_played[t] = 1
-        except:
+        except Exception as e:
             print("no games on", game_date)
-    return games_played
+            raise(e)
+    return games_played, dates
 
 
 def num_games_played_per_week(league, week):
@@ -92,14 +95,14 @@ def num_games_played_per_week(league, week):
     return num_games_played(start_date, end_date)
 
 
-def get_all_taken_players_extra(sc, league, week):
+def get_all_taken_players_extra(sc, league, week, include_today=False, actual_played=False):
     """
     Returns a dictionary of all taken players, with entries appended
     for:
         1) which NBA team they're on
         2) which fantasy team they're on 
         3) what position they are currently placed on for fantasy (to check if they're on IL)
-        4) how many games they have played already this week (does not count games today)
+        4) how many games they have played already this week (does not count games today by default)
         5) how many games total they have on the calendar for this week
         6) nba api name
     
@@ -107,70 +110,118 @@ def get_all_taken_players_extra(sc, league, week):
         sc: yahoo oauth object
         league: yahoo api league object
         week: int yahoo week to return number of games for
+        include_today: include today as games played
 
     """
+    cur_wk = league.current_week()
 
-    # Get all the players currently on teams
-    tp = league.taken_players()
 
     # Get games played information for nba teams
-    this_week = num_games_played_per_week(league, week)
-    if TODAY > league.week_date_range(week)[0]:
-        up_today = num_games_played(league.week_date_range(week)[0], TODAY-1)
+    this_week, teams_playing = num_games_played_per_week(league, week)
+    d0, df = league.week_date_range(week)
+    if d0 <= TODAY <= df:
+        if include_today:
+            up_today = num_games_played(d0, TODAY)[0]
+        else:
+            up_today = num_games_played(d0, TODAY - datetime.timedelta(days=1))[0]
     else:
         up_today = {}
     for t in this_week:
         if t not in up_today:
             up_today[t] = 0
 
+    # Get player logs to determine nba team
+    logs = get_all_player_logs()
+
     # get the roster for all the teams in the fantasy league for today
     # key is player name goes to teamID, manager, teamName, status, position_type, eligible_positions, and selected_position
-    rosters = {}
+    tp = [] # list of all taken players
     teamDF = get_team_ids(sc, league)
+    actual_num_played = {}
     for i,row in teamDF.iterrows():
-        team_roster = row['teamObject'].roster()
-        for p in team_roster:
-            name = p['name']
-            info = {}
-            for k in p:
-                info[k] = p[k]
-            info['teamID'] = row['teamID']
-            info['manager'] = row['manager']
-            info['teamName'] = row['teamName']
-            rosters[name] = info
+        manager = row['manager']
+        if week != cur_wk:
+            if actual_played:
+                for date in pd.date_range(d0, df, freq='D'):
+                    team_roster = row['teamObject'].roster(day=date)
+                    for p in team_roster:
+                        pos = p['selected_position']
+                        status = p['status']
+                        name = yahoo_to_nba_name(p['name'])
+                        nba_team = get_nba_team(name, logs)
+                        played = ("IL" not in pos) and ("BN" not in pos) and (nba_team in teams_playing[date])
+                        if played:
+                            if p['name'] not in actual_num_played:
+                                actual_num_played[p['name']] = {"date":[date.date()], 
+                                                        "manager":[manager],
+                                                        "teamName":[row['teamName']],
+                                                        "name":p['name'],
+                                                        "selected_position":pos,
+                                                        "eligible_positions": p['eligible_positions'],
+                                                        "status": status}
+                            else:
+                                actual_num_played[p['name']]['date'] += [date.date()]
+                                actual_num_played[p['name']]['manager'] += [manager]
+                                actual_num_played[p['name']]['teamName'] += [row['teamName']]
 
-    # Get player logs to determine team
-    logs = get_all_player_logs()
+            else:
+                team_roster = row['teamObject'].roster(day=d0)
+        else:
+            team_roster = row['teamObject'].roster()
+
+        if not actual_played:
+            for p in team_roster:
+                name = p['name']
+                info = {}
+                for k in p:
+                    info[k] = p[k]
+                p['teamID'] = row['teamID']
+                p['manager'] = manager
+                p['teamName'] = row['teamName']
+                tp.append(p)
+
+    if actual_played:
+        for p in actual_num_played:
+            tp.append(actual_num_played[p])
+    
     players = {}
     for p in tp:
+
         name = yahoo_to_nba_name(p['name'])
         entry = {}
         entry['name'] = p['name']
         entry['nba_name'] = name
-
-        # Catch Inactive all year players
-        try:
-            entry['nba_team'] = logs.get_group(name)["TEAM_ABBREVIATION"].iloc[0]
-        except:
-            # Hard code never played CHET
-            if name == 'Chet Holmgren':
-                entry['nba_team'] = 'OKC'
-            else:
-                player_id = find_players_by_full_name(name)[0]['id']
-                career = playercareerstats.PlayerCareerStats(player_id=player_id).get_data_frames()[0].sort_values("PLAYER_AGE")
-                entry['nba_team'] = career.iloc[-1]["TEAM_ABBREVIATION"][-3:]
+        entry['nba_team'] = get_nba_team(name, logs)
+       
 
         entry['games_total'] = this_week[entry['nba_team']]
         entry['games_played'] = up_today[entry['nba_team']]
-        entry['manager'] = rosters[p['name']]['manager']
-        entry['fantasy_team'] = rosters[p['name']]['teamName']
-        entry['selected_position'] = rosters[p['name']]['selected_position']
-        entry['eligible_positions'] = rosters[p['name']]['eligible_positions']
-        entry['status'] = rosters[p['name']]['status']
+        entry['manager'] = p['manager']
+        entry['fantasy_team'] = p['teamName']
+        entry['selected_position'] = p['selected_position']
+        entry['eligible_positions'] = p['eligible_positions']
+        entry['status'] = p['status']
+        if actual_played:
+            entry['actual_played'] = actual_num_played[entry['name']]
         players[name] = entry
 
     return players
 
+def get_nba_team(nba_name, logs):
+
+    # Catch Inactive all year players
+    try:
+        team_name = logs.get_group(nba_name)["TEAM_ABBREVIATION"].iloc[0]
+    except:
+        # Hard code never played CHET
+        if nba_name == 'Chet Holmgren':
+            team_name = 'OKC'
+        else:
+            player_id = find_players_by_full_name(nba_name)[0]['id']
+            career = playercareerstats.PlayerCareerStats(player_id=player_id).get_data_frames()[0].sort_values("PLAYER_AGE")
+            team_name = career.iloc[-1]["TEAM_ABBREVIATION"][-3:]
+    
+    return team_name
 
     
 def get_all_player_logs(season=DEFAULT_SEASON):
@@ -316,7 +367,7 @@ def refresh_oauth_file(oauthFile = 'yahoo_oauth.json', sport = 'nba', year = 202
     return sc, gm, currentLeague
 
 
-def extract_matchup_scores(league, week):
+def extract_matchup_scores(league, week, nba_cols = True):
     """
     extract the matchup stats for each person for the given week
 
@@ -327,6 +378,8 @@ def extract_matchup_scores(league, week):
          yahoo_fantasy_api.league.League
     week : int
          week to extract matchup data from.
+    nba_cols: bool
+        add additional columns that have the NBA api stat name
 
     Returns
     -------
@@ -384,8 +437,15 @@ def extract_matchup_scores(league, week):
     df.loc[df['FTA']==0, 'FT%'] = 0
     # save the week as the dataframe name
     df.name = week
+
+    # Append NBA API column names
+    if nba_cols:
+        df['TOV'] = df['TO']
+        df['FG3M'] = df['3PTM']
+        df['STL'] = df['ST']
+
     return df
 
 if __name__ == "__main__":
     sc, gm, curLg = refresh_oauth_file(oauthFile = 'yahoo_oauth.json')
-    tp = get_all_taken_players_extra(sc, curLg, curLg.current_week())
+    tp = get_all_taken_players_extra(sc, curLg, curLg.current_week()-1, actual_played=True)
