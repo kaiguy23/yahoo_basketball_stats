@@ -373,8 +373,6 @@ if __name__ == '__main__':
     # for week in range(2,curLg.current_week()):
     week = curLg.current_week()
 
-   
-
 
     # set up the save directory for results
     saveDir=os.path.join('matchup results', '2022-2023')
