@@ -1,4 +1,4 @@
-name: yahoo_fantasy_2
+name: yahoo_fantasy
 channels:
   - conda-forge
   - defaults

@@ -138,9 +138,11 @@ def get_all_taken_players_extra(sc, league, week, include_today=False, actual_pl
     tp = [] # list of all taken players
     teamDF = get_team_ids(sc, league)
     actual_num_played = {}
+
     for i,row in teamDF.iterrows():
         manager = row['manager']
-        if week != cur_wk:
+        # If we're looking at the past
+        if week != cur_wk or (TODAY==df and include_today):
             if actual_played:
                 for date in pd.date_range(d0, df, freq='D'):
                     team_roster = row['teamObject'].roster(day=date)

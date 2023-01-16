@@ -260,19 +260,31 @@ def prob_victory(proj, p1, p2, matchup_df = None):
 
     probs = np.zeros(3)
 
-    # Loop through all 512 possible stat winning combinations, prob tie is 1 - pwin1 - pwin2
-    # iterate over all lists of 9 zeros (p1 victory) and ones (p2 victory)
-    for combo in product(np.arange(2), repeat=9):
+    # Loop through all 19,683 possible stat winning combinations/ties
+    # iterate over all lists of 9 zeros (p1 victory) and ones (p2 victory), and twos (ties)
+    for combo in product(np.arange(3), repeat=9):
         p = 1
         for i, stat in enumerate(stat_victory):
             p*=stat_victory[stat][combo[i]]
-        if sum(combo) < 5:
+        players, wins = np.unique(combo, return_counts=True)
+        # One player gets no wins
+        if 1 not in players:
             probs[0]+=p
-        else:
+        elif 0 not in players:
             probs[1]+=p
+        # Tie
+        elif wins[0] == wins[1]:
+            probs[2]+=p
+        # Normal matchups
+        else:
+            if wins[0] > wins[1]:
+                probs[0]+=p
+            else:
+                probs[1]+=p 
     
-    probs[2] = 1 - np.sum(probs)
-
+    # Normalize to smooth out numerical relics
+    probs/=np.sum(probs)
+    
     return probs, stat_victory, percent_std
 
 def ratio_prob(attempts, made, samples=10000, current_score = ((0,0), (0,0))):
@@ -525,7 +537,7 @@ def past_preds(sc, gm, curLg, week, savename=None):
     # print("Predictions for week", week, "from dates:", curLg.week_date_range(week))
 
     
-    players = get_all_taken_players_extra(sc, curLg, week, actual_played=True)
+    players = get_all_taken_players_extra(sc, curLg, week, actual_played=True, include_today=True)
     matchup_df = extract_matchup_scores(curLg, week, nba_cols=True)
 
     # Zero out matchup_df 
@@ -579,7 +591,7 @@ def run_predictions(sc, gm, curLg, week, folder, midweek=False):
 if __name__ == "__main__":
     sc, gm, curLg = refresh_oauth_file(oauthFile = 'yahoo_oauth.json')
 
-    week = curLg.current_week()
+    week = curLg.current_week() + 1
 
     # proj, matchup_df = past_preds(week-1, sc, gm, curLg)
 
