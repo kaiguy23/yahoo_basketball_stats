@@ -129,9 +129,9 @@ dmypy.json
 .pyre/
 
 # local folder with results
-matchup_results/
-*png
 *csv
+!matchup results/20*/week*/totalStandings.csv
+*png
 
 # skip yahoo_keys and oauth json
 *txt
