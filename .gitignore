@@ -130,7 +130,7 @@ dmypy.json
 
 # local folder with results
 *csv
-!matchup results/20*/week*/totalStandings.csv
+!matchup results/20*/week*/matchupTotals.csv
 *png
 
 # skip yahoo_keys and oauth json
