@@ -591,11 +591,11 @@ def run_predictions(sc, gm, curLg, week, folder, midweek=False):
 if __name__ == "__main__":
     sc, gm, curLg = refresh_oauth_file(oauthFile = 'yahoo_oauth.json')
 
-    week = curLg.current_week() + 1
+    week = curLg.current_week()
 
-    # proj, matchup_df = past_preds(week-1, sc, gm, curLg)
+    proj, matchup_df = past_preds( sc, gm, curLg, week-1, savename="past_preds.png")
 
-    run_predictions(sc, gm, curLg, week, "predictions")
+    # run_predictions(sc, gm, curLg, week, "predictions")
     assert(False)
     
     ## TODO: FIX PLAYED TODAY OR NOT
