@@ -151,17 +151,24 @@ def get_all_taken_players_extra(sc, league, week, include_today=False, actual_pl
                         status = p['status']
                         name = yahoo_to_nba_name(p['name'])
                         nba_team = get_nba_team(name, logs)
-                        player_stats = logs.get_group(name)
+
+                        # Catches players that have never played this year
+                        # Looking at you Chi Yen/Lonzo Ball
+                        try:
+                            player_stats = logs.get_group(name)
+                        except:
+                            continue
+
                         played = ("IL" not in pos) and ("BN" not in pos) and (nba_team in teams_playing[date])
                         if played:
                             # Now check to see if they had any stats -- to show if they missed
                             # due to injury or gtd
                             game_stats = player_stats[date.strftime("%Y-%m-%dT00:00:00") == player_stats.GAME_DATE]
                             if game_stats.shape[0] < 1:
-                                print(p, "missed on", date)
+                                # print(p, "missed on", date)
                                 continue
                             elif game_stats.iloc[0]['MIN'] == 0:
-                                print(p, "missed on", date)
+                                # print(p, "missed on", date)
                                 continue
                             if p['name'] not in actual_num_played:
                                 actual_num_played[p['name']] = {"date":[date.date()], 
