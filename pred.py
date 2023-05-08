@@ -593,27 +593,29 @@ if __name__ == "__main__":
 
     week = curLg.current_week()
 
-    proj, matchup_df = past_preds( sc, gm, curLg, week-1, savename="past_preds.png")
+    # proj, matchup_df = past_preds( sc, gm, curLg, week-1, savename="past_preds.png")
 
     # run_predictions(sc, gm, curLg, week, "predictions")
-    assert(False)
     
     ## TODO: FIX PLAYED TODAY OR NOT
     players = get_all_taken_players_extra(sc, curLg, week, include_today=False)
 
 
     matchup_df = extract_matchup_scores(curLg, week, nba_cols=True)
+    # matchup_df = None
     stats = return_all_taken_stats(curLg, tp=players)
     
     proj = project_stats_team(players, stats, subtract_played=True)
+
     # # p, s, m  = prob_victory(proj, "Eli", "Chi Yen")    
-    # # plot_matchup_summary(proj, "Eli", "Chi Yen", matchup_df=matchup_df)
-    plot_matchup_summary(proj, "Kayla", "Gary", matchup_df=matchup_df)
+    plot_matchup_summary(proj, "Eli", "Jack", matchup_df=matchup_df)
+    plot_matchup_summary(proj, "David", "Gary", matchup_df=matchup_df)
+    # plot_matchup_summary(proj, "Fabio", "Yi Sheng", matchup_df=matchup_df)
     # plot_matchup_summary(proj, "Fabio", "Yi Sheng", matchup_df=matchup_df)
 
     # # # proj = project_stats_team(players, stats, num_games=4,count_IL=False, consider_status=False)
     # # # probMat = ideal_matrix(proj, num_games=None, savename="actual_last_week.png")
-    probMat = ideal_matrix(proj, num_games=None, savename="actual.png", matchup_df=matchup_df, week=week)
+    probMat = ideal_matrix(proj, num_games=None, savename=f"preds_{TODAY}.png", matchup_df=matchup_df, week=week)
 
 
 

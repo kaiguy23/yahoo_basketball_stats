@@ -17,9 +17,11 @@ from nba_api.stats.endpoints import scoreboard
 # Get the default season
 TODAY = datetime.date.today()
 if TODAY.month > 7:
-    DEFAULT_SEASON = f"{TODAY.year}-{str(TODAY.year+1)[-2:]}"
+    DEFAULT_SEASON = f"{TODAY.year}_{str(TODAY.year+1)[-2:]}"
 else:
-    DEFAULT_SEASON = f"{TODAY.year-1}-{str(TODAY.year)[-2:]}"
+    DEFAULT_SEASON = f"{TODAY.year-1}_{str(TODAY.year)[-2:]}"
+
+DATE_SCHEMA = "%Y/%m/%d"
 
 
 SPECIAL_NAMES = {}
@@ -243,7 +245,7 @@ def get_nba_team(nba_name, logs):
     return team_name
 
     
-def get_all_player_logs(season=DEFAULT_SEASON):
+def get_all_player_logs(season=DEFAULT_SEASON.replace("_","-")):
     """
     Returns a pandas groupby object that maps player name to
     a log of all their game stats, sorted by game date with most recent first
@@ -444,6 +446,7 @@ def extract_matchup_scores(league, week, nba_cols = True):
             labeledStats['FTA'] = float(ft[1])
             labeledStats['manager'] = teamInfo[-1]['managers'][0]['manager']['nickname']
             labeledStats['teamName'] = teamInfo[2]['name']
+            labeledStats['teamID'] = teamInfo[0]['team_key']
             labeledStats['matchupNumber'] = matchupNumber
             matchupStats.append(labeledStats)
 
