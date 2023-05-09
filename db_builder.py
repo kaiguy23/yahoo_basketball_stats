@@ -349,16 +349,18 @@ class dbBuilder:
         return 
 
 
-    def update_fantasy_rosters(self, pace = False, limit_per_hour=350):
+    def update_fantasy_rosters(self, pace = False, limit_per_hour=330):
 
         # TODO: CHANGE START DAY WHEN DONE DEBUGGING
-        start_day = self.lg.week_date_range(20)[0]
+        start_day = self.lg.week_date_range(1)[0]
         end_day = self.lg.week_date_range(self.lg.end_week())[1]
 
         table_name = f"FANTASY_ROSTERS_{self.season}"
         table_exists = self.check_table_exists(table_name=table_name)
 
         team_df = utils.get_team_ids(self.sc,self.lg)
+
+        print(start_day, end_day)
 
         # If the table exists, find the most recent day we have rosters for
         if table_exists:
@@ -372,6 +374,7 @@ class dbBuilder:
                 self.con.commit()
 
         query_count = 0
+        print(start_day, end_day)
         for date in pd.date_range(start_day, end_day, freq='D'):
             all_rosters = []
             for i, row in team_df.iterrows():
@@ -395,10 +398,11 @@ class dbBuilder:
                 if pace:
                     if query_count > limit_per_hour-20:
                         # Sleep an hour so we don't run out of Yahoo API requests
+                        print("Sleepy Time...")
                         time.sleep(60*60)
                         query_count = 0
 
-                # print(current_roster['teamName'].iloc[0], current_roster['date'].iloc[0])
+                print(current_roster['teamName'].iloc[0], current_roster['date'].iloc[0])
                     
 
             # Save results from each day in case we go over the query limit
@@ -406,7 +410,8 @@ class dbBuilder:
             all_rosters['eligible_positions'] = [str(x) for x in all_rosters['eligible_positions'].values]
             all_rosters.to_sql(table_name, self.con, if_exists="append",index=False)
             self.con.commit()
-            return
+
+        return
         
             
 # TODO: Write test
@@ -438,15 +443,15 @@ def update_roster_helper(old_roster_full, current_roster):
 
 if __name__ == "__main__":
 
-    f = "yahoo_fantasy.sqlite"
+    f = "yahoo_save.sqlite"
     builder = dbBuilder(f)
-    # builder.update_fantasy_teams()
-    # builder.update_fantasy_schedule()
-    # builder.update_fantasy_rosters()
+    builder.update_fantasy_teams()
+    builder.update_fantasy_schedule()
+    builder.update_fantasy_rosters(pace=True)
     # builder.update_player_stats()
     # builder.update_nba_schedule()
     # builder.update_num_games_per_week()
-    builder.update_nba_rosters()
+    # builder.update_nba_rosters()
 
     con = sqlite3.connect(f)
     cur = con.cursor()
