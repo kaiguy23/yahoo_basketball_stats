@@ -412,24 +412,26 @@ class dbBuilder:
 # TODO: Write test
 def update_roster_helper(old_roster_full, current_roster):
 
+    # Separate into players currently on the team
+    # And those that have already left
     active = old_roster_full['LAST_DATE'] == ""
-                
     old_roster_inactive = old_roster_full[np.logical_not(active)].copy()
     old_roster_active = old_roster_full[active].copy()
 
-    # unique values in ar1 that are not in ar2
+    # Unique values in ar1 that are not in ar2
     new_players = np.setdiff1d(current_roster['PLAYER_NAME'].values, 
                                 old_roster_active['PLAYER_NAME'].values)
-    
     departed_players = np.setdiff1d(old_roster_active['PLAYER_NAME'].values, 
                                     current_roster['PLAYER_NAME'].values)
     
     # Add end date for departed players
-    old_roster_active.at[departed_players, 'LAST_DATE'] = utils.TODAY_STR
+    for p in departed_players:
+        old_roster_active.at[p, 'LAST_DATE'] = utils.TODAY_STR
 
     # Append new players
-    modified_roster = pd.concat([old_roster_inactive, old_roster_active, current_roster.loc[new_players]])
-
+    modified_roster = pd.concat([old_roster_inactive, old_roster_active,
+        current_roster[[p in new_players for p in current_roster['PLAYER_NAME'].values]]])
+    
     return modified_roster
             
 

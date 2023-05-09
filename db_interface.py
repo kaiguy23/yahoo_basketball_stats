@@ -15,6 +15,9 @@ class dbInterface:
         self.weeks = None
         self.fantasy_lookup = None
         self.nba_lookup = None
+        self.fantasy_teams = None
+        self.games_per_week = None
+
         
     def __del__(self):
         self.con.close()
@@ -178,14 +181,21 @@ class dbInterface:
         
         return (fantasy_team, nba_team)
     
-    def teamID_info(self, teamID):
+    def teamID_lookup(self, teamID):
 
-        if self.fantasy_team_names is None:
-            self.fantasy_team_names = self.get_fantasy_teams()
-            self.fantasy_team_names.index = self.fantasy_team_names.teamID
+        if self.fantasy_teams is None:
+            self.fantasy_teams = self.get_fantasy_teams()
+            self.fantasy_teams.index = self.fantasy_teams.teamID
         
-        return (self.fantasy_team_names.at[teamID, 'manager'], 
-                self.fantasy_team_names.at[teamID, 'teamName'])
+        return (self.fantasy_teams.at[teamID, 'manager'], 
+                self.fantasy_teams.at[teamID, 'teamName'])
+    
+    def games_in_week(self, nba_team, week):
+
+        if self.games_per_week is None:
+            self.games_per_week = self.get_games_per_week()
+
+        return self.games_per_week.at[week, nba_team]
 
         
 
