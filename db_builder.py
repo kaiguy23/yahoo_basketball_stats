@@ -16,10 +16,12 @@
 #
 #   5) (title: FANTASY_ROSTERS_{SEASON}) Fantasy rosters for each day through  
 #
-#   6) (title: NUM_GAMES_PER_WEEK_{SEASON})
-#       - Shows the number of games per week for each individual player, updates
-#         when they switch teams in the NBA.
-#
+#   6) (title: GAMES_PER_WEEK_{SEASON})
+#       - Shows the number of games per week for each NBA team
+#   
+#   7) (title: NBA_ROSTERS_{SEASON}) NBA rosters for the selected season. Shows the date
+#                                    each entry was updated, so you can see when players
+#                                    switched teams
 ####
 
 import sqlite3
@@ -27,10 +29,11 @@ import datetime
 import time
 import sqlalchemy as sqa
 import pandas as pd
+import numpy as np
 from pathlib import Path
 
 import utils
-from nba_api.stats.endpoints import playergamelogs, scoreboard
+from nba_api.stats.endpoints import playergamelogs, scoreboard, commonteamroster
 from db_interface import dbInterface
 
 
@@ -57,7 +60,9 @@ class dbBuilder:
             return False
         else:
             return True
-
+    
+    def delete_table(self, table_name):
+        cur.execute(f"DROP TABLE {table_name}")
 
     def update_fantasy_schedule(self):
         
@@ -82,7 +87,7 @@ class dbBuilder:
                 for i in sorted(grouped.indices):
                     for_week = grouped.get_group(i)
                     if all(for_week['PTS'] == 0.0):
-                        start_week = week-1
+                        start_week = i-1
                         break
                 start_week = current_week
             else:
@@ -93,7 +98,7 @@ class dbBuilder:
 
             # Delete any entries in the db
             if table_exists:
-                cur.execute(f"DELETE FROM {table_name} WHERE week LIKE '{week}'")
+                self.cur.execute(f"DELETE FROM {table_name} WHERE week LIKE '{week}'")
                 self.con.commit()
 
             # Try to get the date range for the given week, may error if 
@@ -108,7 +113,7 @@ class dbBuilder:
                 end_day = ""
 
 
-            df = utils.extract_matchup_scores(self.lg, week)
+            df = utils.extract_matchup_scores(self.lg, week, nba_cols=False)
             df['week'] = week
             df['startDate'] = start_day
             df['endDate'] = end_day
@@ -190,12 +195,104 @@ class dbBuilder:
         self.con.commit()
         return 
     
-    # TODO: Add this
+    def update_nba_rosters(self):
+        # MUST RUN AFTER NBA SCHEDULE
+
+        table_name = f"NBA_ROSTERS_{self.season}"
+        table_exists = self.check_table_exists(table_name=table_name)
+
+        # Get all the NBA teams and their NBA TEAM_ID
+        db_reader = dbInterface(f)
+        nba_schedule = db_reader.get_nba_schedule()
+        nba_by_team = nba_schedule.groupby("TEAM_ABBREVIATION")
+
+        if table_exists:
+            previous_roster = db_reader.get_nba_rosters()
+            previous_by_team = previous_roster.groupby("TEAM_ABBREVIATION")
+
+
+        all_rosters = []
+        for team in nba_by_team.indices:
+
+            # Get the current NBA Rosters
+            entry = nba_by_team.get_group(team).iloc[0]
+            roster = commonteamroster.CommonTeamRoster(entry['TEAM_ID'], self.season).get_data_frames()[0]
+            roster.rename(columns = {"PLAYER": "PLAYER_NAME",
+                                     "TeamID": "TEAM_ID"}, inplace=True)
+            roster["TEAM_ABBREVIATION"] = team
+            roster["FIRST_DATE"] = utils.TODAY_STR
+            roster["LAST_DATE"] = ""
+            
+            # If we've made rosters before compare
+            if table_exists:
+
+                old_roster = previous_by_team.get_group(team)
+                modified_roster = update_roster_helper(old_roster, roster)
+                all_rosters.append(modified_roster)
+                
+                
+            
+            # If we haven't made rosters before, just save it
+            else:
+                all_rosters.append(roster)
+
+
+        all_rosters = pd.concat(all_rosters)
+        all_rosters.set_index("PLAYER_NAME", inplace=True)
+        all_rosters.to_sql(table_name, self.con, if_exists="replace",index=True)
+        self.con.commit()
+            
+
+            
+
+    
     def update_num_games_per_week(self):
         # MUST BE RUN AFTER UPDATE NBA SCHEDULE
+        # AND UPDATE FANTASY SCHEDULE 
+        
+        table_name = f"GAMES_PER_WEEK_{self.season}"
+
+        # Get the fantasy and nba schedules
+        db_reader = dbInterface(f)
+        fantasy_schedule = db_reader.get_fantasy_schedule()
+        nba_schedule = db_reader.get_nba_schedule()
+        nba_by_day = nba_schedule.groupby("GAME_DATE")
+
+        # Only process weeks 
+        # that are present in both the fantasy schedule
+        # And the NBA schedule
+        # start_week = fantasy_schedule['week'].min()
+        # TODO: Update when done debugging
+        start_week = 20
+        end_week = fantasy_schedule['week'].max()
+
+        all_weeks = []
+        for week in range(start_week, end_week+1):
+            start_day_str, end_day_str = db_reader.week_date_range(week)
+            start_day = datetime.datetime.strptime(start_day_str, utils.DATE_SCHEMA)
+            end_day = datetime.datetime.strptime(end_day_str, utils.DATE_SCHEMA)
+            n_games = {'week': week, 'startDate': start_day_str, 'endDate': end_day_str}
+
+            for date in pd.date_range(start_day, end_day, freq='D'):
+                date_str = date.strftime(utils.DATE_SCHEMA)
+                games = nba_by_day.get_group(date_str)
+                # Count each team that played today
+                for i, row in games.iterrows():
+                    team = row['TEAM_ABBREVIATION']
+                    if team in n_games:
+                        n_games[team] += 1
+                    else:
+                        n_games[team] = 1
+            
+            all_weeks.append(n_games)
+
+        all_weeks = pd.DataFrame(all_weeks)
+        all_weeks.set_index("week", inplace=True)
+        all_weeks.to_sql(table_name, self.con, if_exists="replace",index=True)
+        self.con.commit()
+
         return
     
-    # TODO: Add this
     # NOTE: SLOW because we have to do an API request for each day
     def update_nba_schedule(self):
         
@@ -203,12 +300,46 @@ class dbBuilder:
         start_day = self.lg.week_date_range(20)[0]
         end_day = self.lg.week_date_range(self.lg.end_week())[1]
 
-        # TODO: Find the last day we have games for, and find the last 
+        # Find the last day we have games for, and find the last 
         # day we have game stats for (i.e. PTS aren't None)
         # set start and end day accordingly
+        table_name = f"NBA_SCHEDULE_{self.season}"
+        table_exists = self.check_table_exists(table_name=table_name)
 
-        for date in pd.date_range(start_date, end_date, freq='D'):
+        if table_exists:
+            df = pd.read_sql_query(f"SELECT * FROM {table_name}", self.con)
+            max_date = df['GAME_DATE'].max()
+
+            # We have schedule but may need to update stats
+            if max_date == end_day:
+                end_day = utils.TODAY
+                grouped = df.groupby("GAME_DATE")
+                for i in sorted(grouped.indices):
+                    for_day = grouped.get_group(i)
+                    if all([np.isnan(x) for x in for_day['PTS'].values]):
+                        start_day = i-1
+                        break
+
+            # We need to update the schedule through end of season
+            else:
+                start_day = max_date
+
+        for date in pd.date_range(start_day, end_day, freq='D'):
+            date_str = date.strftime(utils.DATE_SCHEMA)
+
+            # Delete any entries in the db
+            if table_exists:
+                self.cur.execute(f"DELETE FROM {table_name} WHERE GAME_DATE LIKE '{date_str}'")
+                self.con.commit()
+
             sb = scoreboard.Scoreboard(game_date=date).get_data_frames()[1]
+            sb.rename(columns={"GAME_DATE_EST":"GAME_DATE"}, inplace=True)
+            sb.rename(columns=utils.NBA_TO_YAHOO_STATS, inplace=True)
+            sb['GAME_DATE'] = [x[:10] for x in sb['GAME_DATE']]
+            sb.to_sql(table_name, self.con, if_exists="append",index=False)
+            self.con.commit()
+
+
             
         return
 
@@ -276,7 +407,30 @@ class dbBuilder:
             all_rosters.to_sql(table_name, self.con, if_exists="append",index=False)
             self.con.commit()
             return
+        
             
+# TODO: Write test
+def update_roster_helper(old_roster_full, current_roster):
+
+    active = old_roster_full['LAST_DATE'] == ""
+                
+    old_roster_inactive = old_roster_full[np.logical_not(active)].copy()
+    old_roster_active = old_roster_full[active].copy()
+
+    # unique values in ar1 that are not in ar2
+    new_players = np.setdiff1d(current_roster['PLAYER_NAME'].values, 
+                                old_roster_active['PLAYER_NAME'].values)
+    
+    departed_players = np.setdiff1d(old_roster_active['PLAYER_NAME'].values, 
+                                    current_roster['PLAYER_NAME'].values)
+    
+    # Add end date for departed players
+    old_roster_active.at[departed_players, 'LAST_DATE'] = utils.TODAY_STR
+
+    # Append new players
+    modified_roster = pd.concat([old_roster_inactive, old_roster_active, current_roster.loc[new_players]])
+
+    return modified_roster
             
 
 
@@ -287,7 +441,10 @@ if __name__ == "__main__":
     # builder.update_fantasy_teams()
     # builder.update_fantasy_schedule()
     # builder.update_fantasy_rosters()
-    builder.update_player_stats()
+    # builder.update_player_stats()
+    # builder.update_nba_schedule()
+    # builder.update_num_games_per_week()
+    builder.update_nba_rosters()
 
     con = sqlite3.connect(f)
     cur = con.cursor()

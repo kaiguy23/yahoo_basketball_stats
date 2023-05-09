@@ -22,6 +22,7 @@ else:
     DEFAULT_SEASON = f"{TODAY.year-1}_{str(TODAY.year)[-2:]}"
 
 DATE_SCHEMA = "%Y-%m-%d"
+TODAY_STR = TODAY.strftime(DATE_SCHEMA)
 
 # Map of NBA API stat column labels to change
 NBA_TO_YAHOO_STATS = {"TOV": "TO",
