@@ -30,7 +30,7 @@ import pandas as pd
 from pathlib import Path
 
 import utils
-from nba_api.stats.endpoints import playergamelogs
+from nba_api.stats.endpoints import playergamelogs, scoreboard
 from db_interface import dbInterface
 
 
@@ -192,12 +192,24 @@ class dbBuilder:
     
     # TODO: Add this
     def update_num_games_per_week(self):
+        # MUST BE RUN AFTER UPDATE NBA SCHEDULE
         return
     
     # TODO: Add this
-    # NOTE: SLOW
+    # NOTE: SLOW because we have to do an API request for each day
     def update_nba_schedule(self):
+        
+        # TODO: CHANGE START DAY WHEN DONE DEBUGGING
+        start_day = self.lg.week_date_range(20)[0]
+        end_day = self.lg.week_date_range(self.lg.end_week())[1]
 
+        # TODO: Find the last day we have games for, and find the last 
+        # day we have game stats for (i.e. PTS aren't None)
+        # set start and end day accordingly
+
+        for date in pd.date_range(start_date, end_date, freq='D'):
+            sb = scoreboard.Scoreboard(game_date=date).get_data_frames()[1]
+            
         return
 
     def update_fantasy_teams(self):
@@ -207,7 +219,7 @@ class dbBuilder:
 
 
     def update_fantasy_rosters(self, pace = False, limit_per_hour=350):
-        
+
         # TODO: CHANGE START DAY WHEN DONE DEBUGGING
         start_day = self.lg.week_date_range(20)[0]
         end_day = self.lg.week_date_range(self.lg.end_week())[1]
