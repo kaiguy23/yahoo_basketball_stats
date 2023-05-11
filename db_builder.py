@@ -27,7 +27,6 @@
 import sqlite3
 import datetime
 import time
-import sqlalchemy as sqa
 import pandas as pd
 import numpy as np
 from pathlib import Path
@@ -39,16 +38,22 @@ from db_interface import dbInterface
 
 class dbBuilder:
 
-    def __init__(self, db_file, oauthFile = 'yahoo_oauth.json', season = utils.DEFAULT_SEASON):
+    def __init__(self, db_file, oauth_file = 'yahoo_oauth.json', season = utils.DEFAULT_SEASON, debug=False):
         
-        self.sc, self.gm, self.lg = utils.refresh_oauth_file(oauthFile)
+        self.oauth_file = oauth_file 
+        self.sc, self.gm, self.lg = utils.refresh_oauth_file(self.oauth_file)
         self.db_file = db_file
         self.con = sqlite3.connect(f)
         self.cur = self.con.cursor()
         self.season = season
+        self.debug = debug
     
     def __del__(self):
         self.con.close()
+
+    
+    def refresh_oath(self):
+        self.sc, self.gm, self.lg = utils.refresh_oauth_file(self.oauth_file)
 
     def check_table_exists(self, table_name):
         
@@ -62,7 +67,7 @@ class dbBuilder:
             return True
     
     def delete_table(self, table_name):
-        cur.execute(f"DROP TABLE {table_name}")
+        self.cur.execute(f"DROP TABLE {table_name}")
 
     def update_fantasy_schedule(self):
         
@@ -96,6 +101,9 @@ class dbBuilder:
         # Get matchups from each week
         for week in range(start_week, end_week+1): 
 
+            if self.debug:
+                print("Updating Fantasy Schedule for Week", week)
+
             # Delete any entries in the db
             if table_exists:
                 self.cur.execute(f"DELETE FROM {table_name} WHERE week LIKE '{week}'")
@@ -127,9 +135,8 @@ class dbBuilder:
     def update_player_stats(self):
         """Must be run AFTER updating fantasy rosters
         """
-        # TODO: CHANGE START DAY WHEN DONE DEBUGGING
         # Start and end days to get stats for
-        start_day = self.lg.week_date_range(20)[0]
+        start_day = self.lg.week_date_range(1)[0]
         end_day = self.lg.week_date_range(self.lg.end_week())[1]
 
         # Get the fantasy rosters
@@ -142,7 +149,8 @@ class dbBuilder:
         table_name = f"PLAYER_STATS_{self.season}"
         table_exists = self.check_table_exists(table_name=table_name)
 
-        team_df = utils.get_team_ids(self.sc,self.lg)
+        if self.debug:
+            print("Updating Player Stats")
 
         # If the table exists, find the most recent day we have stats
         if table_exists:
@@ -170,7 +178,12 @@ class dbBuilder:
             date_str = date.strftime(utils.DATE_SCHEMA)  
             
             # Get stats for the day
+            # There may be some days without nba games
+            if date_str not in stats.indices:
+                continue
+
             nba_stats = stats.get_group(date_str)
+            
             fantasy = fantasy_rosters.get_group(date_str).groupby("name")
             
             # Append fantasy roster columns to the NBA API Columns
@@ -236,6 +249,9 @@ class dbBuilder:
             else:
                 all_rosters.append(roster)
 
+            if self.debug:
+                print("Getting Rosters for", team)
+
 
         all_rosters = pd.concat(all_rosters)
         all_rosters.set_index("PLAYER_NAME", inplace=True)
@@ -261,13 +277,15 @@ class dbBuilder:
         # Only process weeks 
         # that are present in both the fantasy schedule
         # And the NBA schedule
-        # start_week = fantasy_schedule['week'].min()
-        # TODO: Update when done debugging
-        start_week = 20
+        start_week = fantasy_schedule['week'].min()
         end_week = fantasy_schedule['week'].max()
 
         all_weeks = []
         for week in range(start_week, end_week+1):
+
+            if self.debug:
+                print("Getting Num Games in Week", week)
+
             start_day_str, end_day_str = db_reader.week_date_range(week)
             start_day = datetime.datetime.strptime(start_day_str, utils.DATE_SCHEMA)
             end_day = datetime.datetime.strptime(end_day_str, utils.DATE_SCHEMA)
@@ -275,6 +293,11 @@ class dbBuilder:
 
             for date in pd.date_range(start_day, end_day, freq='D'):
                 date_str = date.strftime(utils.DATE_SCHEMA)
+                
+                # Some dates don't have NBA games
+                if date_str not in nba_by_day.indices:
+                    continue
+
                 games = nba_by_day.get_group(date_str)
                 # Count each team that played today
                 for i, row in games.iterrows():
@@ -296,8 +319,7 @@ class dbBuilder:
     # NOTE: SLOW because we have to do an API request for each day
     def update_nba_schedule(self):
         
-        # TODO: CHANGE START DAY WHEN DONE DEBUGGING
-        start_day = self.lg.week_date_range(20)[0]
+        start_day = self.lg.week_date_range(1)[0]
         end_day = self.lg.week_date_range(self.lg.end_week())[1]
 
         # Find the last day we have games for, and find the last 
@@ -325,7 +347,12 @@ class dbBuilder:
                 start_day = max_date
 
         for date in pd.date_range(start_day, end_day, freq='D'):
+
+
             date_str = date.strftime(utils.DATE_SCHEMA)
+
+            if self.debug:
+                print("Getting Schedule for", date_str)
 
             # Delete any entries in the db
             if table_exists:
@@ -351,16 +378,17 @@ class dbBuilder:
 
     def update_fantasy_rosters(self, pace = False, limit_per_hour=330):
 
-        # TODO: CHANGE START DAY WHEN DONE DEBUGGING
+        if self.debug:
+            print("Updating Fantasy Rosters")
+
         start_day = self.lg.week_date_range(1)[0]
         end_day = self.lg.week_date_range(self.lg.end_week())[1]
 
         table_name = f"FANTASY_ROSTERS_{self.season}"
         table_exists = self.check_table_exists(table_name=table_name)
 
-        team_df = utils.get_team_ids(self.sc,self.lg)
+        
 
-        print(start_day, end_day)
 
         # If the table exists, find the most recent day we have rosters for
         if table_exists:
@@ -373,11 +401,14 @@ class dbBuilder:
                 self.cur.execute(f"DELETE FROM {table_name} WHERE date LIKE '{start_date_str}'")
                 self.con.commit()
 
-        query_count = 0
-        print(start_day, end_day)
+        team_df = utils.get_team_ids(self.sc,self.lg)
+        query_count = 3
         for date in pd.date_range(start_day, end_day, freq='D'):
             all_rosters = []
-            for i, row in team_df.iterrows():
+            for i in range(team_df.shape[0]):
+                
+                row = team_df.iloc[i]
+
                 current_roster = pd.DataFrame(row['teamObject'].roster(day = date))
                 
                 # Add date information
@@ -394,15 +425,21 @@ class dbBuilder:
                 # Save the results
                 all_rosters.append(current_roster)
 
+                if self.debug:
+                    print("Getting Roster for", current_roster['teamName'].iloc[0], current_roster['date'].iloc[0])
+
                 query_count += 1
                 if pace:
                     if query_count > limit_per_hour-20:
                         # Sleep an hour so we don't run out of Yahoo API requests
                         print("Sleepy Time...")
                         time.sleep(60*60)
+
+                        # Refresh the access
+                        self.refresh_oath()
+                        team_df = utils.get_team_ids(self.sc,self.lg)
                         query_count = 0
 
-                print(current_roster['teamName'].iloc[0], current_roster['date'].iloc[0])
                     
 
             # Save results from each day in case we go over the query limit
@@ -413,6 +450,8 @@ class dbBuilder:
 
         return
         
+        ## TODO: Maybe Detect change of teams via player stats? To backfill this past season
+        ## Also because getting rosters seems to take a long time?
             
 # TODO: Write test
 def update_roster_helper(old_roster_full, current_roster):
@@ -444,14 +483,14 @@ def update_roster_helper(old_roster_full, current_roster):
 if __name__ == "__main__":
 
     f = "yahoo_save.sqlite"
-    builder = dbBuilder(f)
-    builder.update_fantasy_teams()
-    builder.update_fantasy_schedule()
-    builder.update_fantasy_rosters(pace=True)
+    builder = dbBuilder(f, debug=True)
+    # builder.update_fantasy_teams()
+    # builder.update_fantasy_schedule()
+    # builder.update_fantasy_rosters(pace=True)
     # builder.update_player_stats()
     # builder.update_nba_schedule()
     # builder.update_num_games_per_week()
-    # builder.update_nba_rosters()
+    builder.update_nba_rosters()
 
     con = sqlite3.connect(f)
     cur = con.cursor()

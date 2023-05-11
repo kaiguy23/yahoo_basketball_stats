@@ -144,6 +144,7 @@ class dbInterface:
         # Return the start and end dates
         return (self.weeks.at[week, 'startDate'], self.weeks.at[week, 'endDate'])
     
+    # TODO: Maybe include lookup over stats to see who they were playing for?
     def player_affiliation(self, name, date):
 
         if isinstance(date, str):
@@ -206,3 +207,5 @@ class dbInterface:
     
 
 ## TODO: Make games played this week so far function using unique values of (date, team) in player_stats
+
+## TODO: Make a function that gets the matchup score on any given day by summing player stats
