@@ -204,7 +204,7 @@ class dbInterface:
             
         
 
-    
+## TODO: Make a lookup player stats method to get stats for one individual player
 
 ## TODO: Make games played this week so far function using unique values of (date, team) in player_stats
 
