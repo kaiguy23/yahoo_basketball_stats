@@ -251,14 +251,15 @@ class dbBuilder:
 
             if self.debug:
                 print("Getting Rosters for", team)
+            
+            # So we don't do too many requests
+            time.sleep(2)
 
 
         all_rosters = pd.concat(all_rosters)
         all_rosters.set_index("PLAYER_NAME", inplace=True)
         all_rosters.to_sql(table_name, self.con, if_exists="replace",index=True)
         self.con.commit()
-            
-
             
 
     
