@@ -29,6 +29,13 @@ NBA_TO_YAHOO_STATS = {"TOV": "TO",
                       "FG3M": "3PTM",
                       "STL": "ST"}
 
+NBA_TEAMS = ['ATL','BKN','BOS','CHA','CHI','CLE',
+             'DAL','DEN','DET','GSW','HOU','IND',
+             'LAC','LAL','MEM','MIA','MIL','MIN',
+             'NOP','NYK','OKC','ORL','PHI','PHX',
+             'POR','SAC','SAS','TOR','UTA','WAS']
+NBA_TEAMS_SET = set(NBA_TEAMS)
+
 
 SPECIAL_NAMES = {}
 def yahoo_to_nba_name(name, hardcoded = SPECIAL_NAMES):

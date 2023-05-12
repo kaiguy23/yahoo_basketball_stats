@@ -24,6 +24,9 @@
 #                                    switched teams
 ####
 
+
+## TODO: Make a logger?
+
 import sqlite3
 import datetime
 import time
@@ -54,6 +57,11 @@ class dbBuilder:
     
     def refresh_oath(self):
         self.sc, self.gm, self.lg = utils.refresh_oauth_file(self.oauth_file)
+
+    
+    def table_names(self):
+
+        return self.cur.execute( f"SELECT name FROM sqlite_master WHERE type='table'").fetchall()
 
     def check_table_exists(self, table_name):
         
@@ -183,6 +191,7 @@ class dbBuilder:
                 continue
 
             nba_stats = stats.get_group(date_str)
+
             
             fantasy = fantasy_rosters.get_group(date_str).groupby("name")
             
@@ -253,7 +262,7 @@ class dbBuilder:
                 print("Getting Rosters for", team)
             
             # So we don't do too many requests
-            time.sleep(2)
+            time.sleep(1)
 
 
         all_rosters = pd.concat(all_rosters)
@@ -364,8 +373,16 @@ class dbBuilder:
             sb.rename(columns={"GAME_DATE_EST":"GAME_DATE"}, inplace=True)
             sb.rename(columns=utils.NBA_TO_YAHOO_STATS, inplace=True)
             sb['GAME_DATE'] = [x[:10] for x in sb['GAME_DATE']]
+
+            
+            # Filter out for all-star games
+            sb = sb[sb['TEAM_ABBREVIATION'].isin(utils.NBA_TEAMS_SET)]
+
             sb.to_sql(table_name, self.con, if_exists="append",index=False)
             self.con.commit()
+
+            # So we don't do too many requests
+            time.sleep(1)
 
 
             
@@ -491,10 +508,11 @@ if __name__ == "__main__":
     # builder.update_player_stats()
     # builder.update_nba_schedule()
     # builder.update_num_games_per_week()
-    builder.update_nba_rosters()
+    # builder.update_nba_rosters()
 
     con = sqlite3.connect(f)
     cur = con.cursor()
+
 
     db = dbInterface(f)
 

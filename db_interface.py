@@ -111,7 +111,7 @@ class dbInterface:
         df.index = df['week']
         return df
     
-    def get_nba_rosters(self, filter_statement = ""):
+    def get_nba_rosters(self, filter_statement = "", season=utils.DEFAULT_SEASON):
         """
         
         db.get_fantasy_schedule("WHERE manager LIKE 'Eli'")
@@ -123,7 +123,7 @@ class dbInterface:
         Returns:
             _type_: _description_
         """
-        table_name = f"NBA_ROSTERS_{self.season}"
+        table_name = f"NBA_ROSTERS_{season}"
         query = dbInterface.build_select_statement(table_name, filter_statement)
         df = pd.read_sql_query(query, self.con)
         return df
@@ -133,11 +133,11 @@ class dbInterface:
         return pd.read_sql_query(f"SELECT * FROM {table_name}", self.con)
     
 
-    def week_date_range(self, week):
+    def week_date_range(self, week, season=utils.DEFAULT_SEASON):
 
         # Build the weeks dataframe if it hasn't been built yet
         if self.weeks is None:
-            fantasy_schedule = self.get_fantasy_schedule()
+            fantasy_schedule = self.get_fantasy_schedule(season=season)
             self.weeks = fantasy_schedule[fantasy_schedule.teamID == fantasy_schedule.teamID.iloc[-1]][['week', 'startDate', 'endDate']]
             self.weeks.index = self.weeks.week
         
@@ -201,7 +201,7 @@ class dbInterface:
         
 
 
-            
+## TODO: Make season an input for the constructor
         
 
 ## TODO: Make a lookup player stats method to get stats for one individual player
