@@ -228,45 +228,36 @@ class dbBuilder:
         nba_schedule = db_reader.get_nba_schedule()
         nba_by_team = nba_schedule.groupby("TEAM_ABBREVIATION")
 
+        # If we've made rosters before
+        # delete any partial entries 
+        # with this date
         if table_exists:
-            previous_roster = db_reader.get_nba_rosters()
-            previous_by_team = previous_roster.groupby("TEAM_ABBREVIATION")
+            self.cur.execute(f"DELETE FROM {table_name} WHERE\
+                                DATE LIKE '{utils.TODAY_STR}'")
+            self.con.commit()
 
 
         all_rosters = []
         for team in nba_by_team.indices:
 
+            if self.debug:
+                print("Getting Rosters for", team)
+            
             # Get the current NBA Rosters
             entry = nba_by_team.get_group(team).iloc[0]
             roster = commonteamroster.CommonTeamRoster(entry['TEAM_ID'], self.season).get_data_frames()[0]
             roster.rename(columns = {"PLAYER": "PLAYER_NAME",
                                      "TeamID": "TEAM_ID"}, inplace=True)
             roster["TEAM_ABBREVIATION"] = team
-            roster["FIRST_DATE"] = utils.TODAY_STR
-            roster["LAST_DATE"] = ""
-            
-            # If we've made rosters before compare
-            if table_exists:
+            roster["DATE"] = utils.TODAY_STR
 
-                old_roster = previous_by_team.get_group(team)
-                modified_roster = update_roster_helper(old_roster, roster)
-                all_rosters.append(modified_roster)
-                
-                
-            
-            # If we haven't made rosters before, just save it
-            else:
-                all_rosters.append(roster)
-
-            if self.debug:
-                print("Getting Rosters for", team)
+            all_rosters.append(roster)
             
             # So we don't do too many requests
             time.sleep(1)
 
 
         all_rosters = pd.concat(all_rosters)
-        all_rosters.set_index("PLAYER_NAME", inplace=True)
         all_rosters.to_sql(table_name, self.con, if_exists="replace",index=True)
         self.con.commit()
             
@@ -501,7 +492,7 @@ def update_roster_helper(old_roster_full, current_roster):
 if __name__ == "__main__":
 
     f = "yahoo_save.sqlite"
-    builder = dbBuilder(f, debug=True)
+    # builder = dbBuilder(f, debug=True)
     # builder.update_fantasy_teams()
     # builder.update_fantasy_schedule()
     # builder.update_fantasy_rosters(pace=True)

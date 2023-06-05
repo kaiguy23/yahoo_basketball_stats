@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 import sqlite3
 import datetime
 
@@ -14,7 +15,8 @@ class dbInterface:
         self.cur = self.con.cursor()
         self.weeks = None
         self.fantasy_lookup = None
-        self.nba_lookup = None
+        self.nba_stats = None
+        self.nba_rosters = None
         self.fantasy_teams = None
         self.games_per_week = None
 
@@ -28,6 +30,10 @@ class dbInterface:
         if filter_statement != "":
             query += " " + filter_statement
         return query
+    
+    def table_names(self):
+
+        return self.cur.execute( f"SELECT name FROM sqlite_master WHERE type='table'").fetchall()
 
     def get_fantasy_schedule(self, filter_statement = "", season=utils.DEFAULT_SEASON):
         """
@@ -138,14 +144,25 @@ class dbInterface:
         # Build the weeks dataframe if it hasn't been built yet
         if self.weeks is None:
             fantasy_schedule = self.get_fantasy_schedule(season=season)
-            self.weeks = fantasy_schedule[fantasy_schedule.teamID == fantasy_schedule.teamID.iloc[-1]][['week', 'startDate', 'endDate']]
+            self.weeks = fantasy_schedule[fantasy_schedule.teamID ==
+                                          fantasy_schedule.teamID.iloc[-1]][['week', 'startDate', 'endDate']]
             self.weeks.index = self.weeks.week
         
         # Return the start and end dates
         return (self.weeks.at[week, 'startDate'], self.weeks.at[week, 'endDate'])
     
-    # TODO: Maybe include lookup over stats to see who they were playing for?
     def player_affiliation(self, name, date):
+        """
+        Returns the affiliations for the given NBA player
+        on the given date
+
+        Args:
+            name (str): name of nba player (from NBA API)
+            date (str or datetime): date to look up for
+
+        Returns:
+           Tuple: (yahoo fantasy team id, nba team name)
+        """
 
         if isinstance(date, str):
             date = datetime.datetime.strptime(date, utils.DATE_SCHEMA)
@@ -156,21 +173,20 @@ class dbInterface:
         # Generate lookups if they haven't been made yet
         if self.fantasy_lookup is None:
             self.fantasy_lookup = self.get_fantasy_rosters().groupby("name")
-
-        if self.nba_lookup is None:
-            self.nba_lookup = self.get_nba_rosters().groupby("PLAYER_NAME")
+        if self.nba_stats is None:
+            self.nba_stats = self.get_player_stats().groupby("PLAYER_NAME")
+        if self.nba_rosters is None:
+            self.nba_rosters = self.get_nba_rosters().groupby("PLAYER_NAME")
         
         # Find which NBA team the player was on for the specified date
-        nba_entries = self.nba_lookup.get_group(name).sort_values("START_DATE", ascending=True)
-        nba_team = ""
-        for i, row in nba_entries.iterrows():
-            if row['END_DATE'] != "":
-                start_date = datetime.datetime.strptime(row["START_DATE"], utils.DATE_SCHEMA)
-                end_date = datetime.datetime.strptime(row["END_DATE"], utils.DATE_SCHEMA)
-                if start_date <= date < end_date:
-                    nba_team = row["TEAM_ABBREVIATION"]
-            else:
-                nba_team = row["TEAM_ABBREVIATION"]
+        if name in self.nba_stats.indices:
+            entries = self.nba_stats.get_group(name)
+            closest_i = find_closest_date(date, entries["GAME_DATE"].values)
+            nba_team = entries.iloc[closest_i]["TEAM_ABBREVIATION"]
+        else:
+            entries = self.nba_rosters.get_group(name)
+            closest_i = find_closest_date(date, entries["DATE"].values)
+            nba_team = entries.iloc[closest_i]["TEAM_ABBREVIATION"]
 
         # Check if the player was on a fantasy roster that day
         fantasy_entries = self.fantasy_lookup.get_group(name)
@@ -198,7 +214,40 @@ class dbInterface:
 
         return self.games_per_week.at[week, nba_team]
 
-        
+
+
+# Helper function for finding the closest date
+def find_closest_date(d, dates):
+    """
+    Finds the index of the closest date in 
+    dates to the date d. If d/dates
+    are strings, assumes they are in the default
+    date format.
+
+    Args:
+        d (str or datetime): _description_
+        dates (list of str or datetime): _description_
+    """
+
+    if isinstance(d, str):
+        d = datetime.datetime.strptime(d, utils.DATE_SCHEMA)
+    
+    closest_i = 0
+    diff = np.inf
+    for i in range(len(dates)):
+        d2 = dates[i]
+        if isinstance(d2, str):
+            d2 = datetime.datetime.strptime(d2, utils.DATE_SCHEMA)
+        diff2 = abs((d - d2).days)
+        if diff2 < diff:
+            diff = diff2
+            closest_i = i
+    
+    return closest_i
+
+
+
+    
 
 
 ## TODO: Make season an input for the constructor
