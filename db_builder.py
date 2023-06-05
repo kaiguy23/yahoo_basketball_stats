@@ -385,7 +385,7 @@ class dbBuilder:
         return 
 
 
-    def update_fantasy_rosters(self, pace = False, limit_per_hour=330):
+    def update_fantasy_rosters(self, pace = False, limit_per_hour=300):
 
         if self.debug:
             print("Updating Fantasy Rosters")
@@ -459,33 +459,15 @@ class dbBuilder:
 
         return
         
-        ## TODO: Maybe Detect change of teams via player stats? To backfill this past season
-        ## Also because getting rosters seems to take a long time?
-            
-# TODO: Write test
-def update_roster_helper(old_roster_full, current_roster):
-
-    # Separate into players currently on the team
-    # And those that have already left
-    active = old_roster_full['LAST_DATE'] == ""
-    old_roster_inactive = old_roster_full[np.logical_not(active)].copy()
-    old_roster_active = old_roster_full[active].copy()
-
-    # Unique values in ar1 that are not in ar2
-    new_players = np.setdiff1d(current_roster['PLAYER_NAME'].values, 
-                                old_roster_active['PLAYER_NAME'].values)
-    departed_players = np.setdiff1d(old_roster_active['PLAYER_NAME'].values, 
-                                    current_roster['PLAYER_NAME'].values)
-    
-    # Add end date for departed players
-    for p in departed_players:
-        old_roster_active.at[p, 'LAST_DATE'] = utils.TODAY_STR
-
-    # Append new players
-    modified_roster = pd.concat([old_roster_inactive, old_roster_active,
-        current_roster[[p in new_players for p in current_roster['PLAYER_NAME'].values]]])
-    
-    return modified_roster
+        
+    def update_db(self):
+        self.update_fantasy_teams()
+        self.update_fantasy_schedule()
+        self.update_fantasy_rosters(pace=False)
+        self.update_player_stats()
+        self.update_nba_schedule()
+        self.update_num_games_per_week()
+        self.update_nba_rosters()
             
 
 
@@ -493,13 +475,7 @@ if __name__ == "__main__":
 
     f = "yahoo_save.sqlite"
     # builder = dbBuilder(f, debug=True)
-    # builder.update_fantasy_teams()
-    # builder.update_fantasy_schedule()
-    # builder.update_fantasy_rosters(pace=True)
-    # builder.update_player_stats()
-    # builder.update_nba_schedule()
-    # builder.update_num_games_per_week()
-    # builder.update_nba_rosters()
+    
 
     con = sqlite3.connect(f)
     cur = con.cursor()
