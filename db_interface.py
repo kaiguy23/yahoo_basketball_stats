@@ -3,12 +3,22 @@ import numpy as np
 import sqlite3
 import datetime
 
+from typing import Union
+
 import utils
 
 
 class dbInterface:
 
-    def __init__(self, f):
+    def __init__(self, f: str, season: str = utils.DEFAULT_SEASON):
+        """
+        Makes an object to read the yahoo fantasy database
+
+        Args:
+            f (str): Database file
+            season (str, optional): String for the season, like 2022_23.
+                                    Defaults to utils.DEFAULT_SEASON.
+        """
 
         # Open in read only mode
         self.con = sqlite3.connect(f, uri=True)
@@ -18,140 +28,209 @@ class dbInterface:
         self.nba_stats = None
         self.nba_rosters = None
         self.fantasy_teams = None
-        self.games_per_week = None
+        self.games_per_day = None
+        self.season = season
 
-        
     def __del__(self):
         self.con.close()
 
     @staticmethod
-    def build_select_statement(table_name, filter_statement=""):
+    def build_select_statement(table_name: str,
+                               filter_statement: str = "") -> str:
+        """
+        Formats a select statement to query the database
+
+        Args:
+            table_name (str): table to read from
+            filter_statement (str, optional): SQL filter statement to be added.
+                                              e.g. "WHERE manager LIKE 'Eli'"
+
+        Returns:
+            str: desired select statement
+        """
         query = f"SELECT * FROM {table_name}"
         if filter_statement != "":
             query += " " + filter_statement
         return query
-    
-    def table_names(self):
 
-        return self.cur.execute( f"SELECT name FROM sqlite_master WHERE type='table'").fetchall()
-
-    def get_fantasy_schedule(self, filter_statement = "", season=utils.DEFAULT_SEASON):
+    def table_names(self) -> list:
         """
-        
-        db.get_fantasy_schedule("WHERE manager LIKE 'Eli'")
-
-        Args:
-            filter_statement (str, optional): _description_. Defaults to "".
-            season (_type_, optional): _description_. Defaults to utils.DEFAULT_SEASON.
+        Returns a list of the tables present in the database file
 
         Returns:
-            _type_: _description_
+            list: list of tables
         """
-        table_name = f"FANTASY_SCHEDULE_{season}"
-        query = dbInterface.build_select_statement(table_name, filter_statement)
+
+        return self.cur.execute("SELECT name FROM sqlite_master\
+                                WHERE type='table'").fetchall()
+
+    def get_fantasy_schedule(self, filter_statement: str = "") -> pd.DataFrame:
+        """
+        Reads the fantasy schedule table
+
+        Args:
+            filter_statement (str, optional): SQL filter statement to be added.
+                                              e.g. "WHERE manager LIKE 'Eli'"
+
+        Returns:
+            pd.DataFrame: fantasy schedule table
+        """
+        table_name = f"FANTASY_SCHEDULE_{self.season}"
+        query = dbInterface.build_select_statement(table_name,
+                                                   filter_statement)
         return pd.read_sql_query(query, self.con)
-    
-    def get_nba_schedule(self, filter_statement = "", season=utils.DEFAULT_SEASON):
+
+    def get_nba_schedule(self, filter_statement: str = "") -> pd.DataFrame:
         """
-        
-        db.get_fantasy_schedule("WHERE manager LIKE 'Eli'")
+        Reads the nba schedule table
 
         Args:
-            filter_statement (str, optional): _description_. Defaults to "".
-            season (_type_, optional): _description_. Defaults to utils.DEFAULT_SEASON.
+            filter_statement (str, optional): SQL filter statement to be added.
+                                              e.g. "WHERE manager LIKE 'Eli'"
 
         Returns:
-            _type_: _description_
+            pd.DataFrame: nba schedule table
         """
-        table_name = f"NBA_SCHEDULE_{season}"
-        query = dbInterface.build_select_statement(table_name, filter_statement)
+        table_name = f"NBA_SCHEDULE_{self.season}"
+        query = dbInterface.build_select_statement(table_name,
+                                                   filter_statement)
         return pd.read_sql_query(query, self.con)
-    
-    def get_fantasy_rosters(self, filter_statement = "", season=utils.DEFAULT_SEASON):
+
+    def get_fantasy_rosters(self, filter_statement: str = "") -> pd.DataFrame:
         """
-        
-        db.get_fantasy_schedule("WHERE manager LIKE 'Eli'")
+        Reads the fantasy rosters table
 
         Args:
-            filter_statement (str, optional): _description_. Defaults to "".
-            season (_type_, optional): _description_. Defaults to utils.DEFAULT_SEASON.
+            filter_statement (str, optional): SQL filter statement to be added.
+                                              e.g. "WHERE manager LIKE 'Eli'"
 
         Returns:
-            _type_: _description_
+            pd.DataFrame: fantasy rosters table
         """
-        table_name = f"FANTASY_ROSTERS_{season}"
-        query = dbInterface.build_select_statement(table_name, filter_statement)
+        table_name = f"FANTASY_ROSTERS_{self.season}"
+        query = dbInterface.build_select_statement(table_name,
+                                                   filter_statement)
         return pd.read_sql_query(query, self.con)
-    
-    def get_player_stats(self, filter_statement = "", season=utils.DEFAULT_SEASON):
-        """
-        
-        db.get_fantasy_schedule("WHERE manager LIKE 'Eli'")
 
+    def get_nba_stats(self, filter_statement: str = "") -> pd.DataFrame:
+        """
+        Reads the player stats table
         Args:
-            filter_statement (str, optional): _description_. Defaults to "".
-            season (_type_, optional): _description_. Defaults to utils.DEFAULT_SEASON.
+            filter_statement (str, optional): SQL filter statement to be added.
+                                              e.g. "WHERE manager LIKE 'Eli'"
 
         Returns:
-            _type_: _description_
+            pd.DataFrame: player stats table
         """
-        table_name = f"PLAYER_STATS_{season}"
-        query = dbInterface.build_select_statement(table_name, filter_statement)
+        table_name = f"PLAYER_STATS_{self.season}"
+        query = dbInterface.build_select_statement(table_name,
+                                                   filter_statement)
         return pd.read_sql_query(query, self.con)
-    
-    def get_games_per_week(self, filter_statement = "", season=utils.DEFAULT_SEASON):
+
+    def get_games_per_day(self, filter_statement: str = "") -> pd.DataFrame:
         """
-        
-        db.get_fantasy_schedule("WHERE manager LIKE 'Eli'")
+        Reads the games per week table
 
         Args:
-            filter_statement (str, optional): _description_. Defaults to "".
-            season (_type_, optional): _description_. Defaults to utils.DEFAULT_SEASON.
+            filter_statement (str, optional): SQL filter statement to be added.
+                                              e.g. "WHERE manager LIKE 'Eli'"
 
         Returns:
-            _type_: _description_
+            pd.DataFrame: games per week table
         """
-        table_name = f"GAMES_PER_WEEK_{season}"
-        query = dbInterface.build_select_statement(table_name, filter_statement)
+        table_name = f"GAMES_PER_DAY_{self.season}"
+        query = dbInterface.build_select_statement(table_name,
+                                                   filter_statement)
         df = pd.read_sql_query(query, self.con)
-        df.index = df['week']
+        df.index = df['date']
         return df
-    
-    def get_nba_rosters(self, filter_statement = "", season=utils.DEFAULT_SEASON):
+
+    def get_nba_rosters(self, filter_statement: str = "") -> pd.DataFrame:
         """
-        
-        db.get_fantasy_schedule("WHERE manager LIKE 'Eli'")
+        Reads the nba rosters table
 
         Args:
-            filter_statement (str, optional): _description_. Defaults to "".
-            season (_type_, optional): _description_. Defaults to utils.DEFAULT_SEASON.
+            filter_statement (str, optional): SQL filter statement to be added.
+                                              e.g. "WHERE manager LIKE 'Eli'"
 
         Returns:
-            _type_: _description_
+            pd.DataFrame: nba rosters table
         """
-        table_name = f"NBA_ROSTERS_{season}"
-        query = dbInterface.build_select_statement(table_name, filter_statement)
+        table_name = f"NBA_ROSTERS_{self.season}"
+        query = dbInterface.build_select_statement(table_name,
+                                                   filter_statement)
         df = pd.read_sql_query(query, self.con)
         return df
-    
-    def get_fantasy_teams(self):
+
+    def get_fantasy_teams(self) -> pd.DataFrame:
+        """
+        Reads the current fantasy teams table
+
+        Returns:
+            pd.DataFrame: current fantasy teams table
+        """
         table_name = "CURRENT_FANTASY_TEAMS"
         return pd.read_sql_query(f"SELECT * FROM {table_name}", self.con)
-    
 
-    def week_date_range(self, week, season=utils.DEFAULT_SEASON):
+    def week_for_date(self, date: Union[str, datetime.datetime]) -> int:
+        """
+        Tells you which yahoo week number the specified date is in
+        returns -1 if it's not in any week
+
+        Args:
+            date (Union[str, datetime.datetime]): date string in the
+                                                  standard scheme or 
+                                                  datetime object.
+
+        Returns:
+            int: Yahoo week number
+        """
+        # Build the weeks dataframe if it hasn't been built yet
+        if self.weeks is None:
+            fantasy_schedule = self.get_fantasy_schedule(season=self.season)
+            self.weeks = fantasy_schedule[fantasy_schedule.teamID ==
+                                          fantasy_schedule.teamID.iloc[-1]]
+            self.weeks = self.weeks[['week', 'startDate', 'endDate']]
+            self.weeks.index = self.weeks.week
+        if isinstance(date, str):
+            date = datetime.datetime.strptime(date, utils.DATE_SCHEMA)
+
+        for week, row in self.weeks.iterrows():
+            start_day = datetime.datetime.strptime(row['startDate'],
+                                               utils.DATE_SCHEMA)
+            end_day = datetime.datetime.strptime(row['endDate'],
+                                             utils.DATE_SCHEMA)
+            if start_day <= date <= end_day:
+                return week
+        
+        return -1
+            
+    def week_date_range(self, week: int,
+                        season: str = utils.DEFAULT_SEASON) -> tuple:
+        """
+        Returns the start and end date of the specified week
+
+        Args:
+            week (int): Yahoo week in the season
+
+        Returns:
+           tuple: (first day, last day)
+        """
 
         # Build the weeks dataframe if it hasn't been built yet
         if self.weeks is None:
-            fantasy_schedule = self.get_fantasy_schedule(season=season)
+            fantasy_schedule = self.get_fantasy_schedule(season=self.season)
             self.weeks = fantasy_schedule[fantasy_schedule.teamID ==
-                                          fantasy_schedule.teamID.iloc[-1]][['week', 'startDate', 'endDate']]
+                                          fantasy_schedule.teamID.iloc[-1]]
+            self.weeks = self.weeks[['week', 'startDate', 'endDate']]
             self.weeks.index = self.weeks.week
-        
+
         # Return the start and end dates
-        return (self.weeks.at[week, 'startDate'], self.weeks.at[week, 'endDate'])
-    
-    def player_affiliation(self, name, date):
+        return (self.weeks.at[week, 'startDate'],
+                self.weeks.at[week, 'endDate'])
+
+    def player_affiliation(self, name: str,
+                           date: Union[str, datetime.datetime]) -> tuple:
         """
         Returns the affiliations for the given NBA player
         on the given date
@@ -168,8 +247,6 @@ class dbInterface:
             date = datetime.datetime.strptime(date, utils.DATE_SCHEMA)
         date_str = date.strftime(utils.DATE_SCHEMA)
 
-
-
         # Generate lookups if they haven't been made yet
         if self.fantasy_lookup is None:
             self.fantasy_lookup = self.get_fantasy_rosters().groupby("name")
@@ -177,7 +254,7 @@ class dbInterface:
             self.nba_stats = self.get_player_stats().groupby("PLAYER_NAME")
         if self.nba_rosters is None:
             self.nba_rosters = self.get_nba_rosters().groupby("PLAYER_NAME")
-        
+
         # Find which NBA team the player was on for the specified date
         if name in self.nba_stats.indices:
             entries = self.nba_stats.get_group(name)
@@ -195,43 +272,105 @@ class dbInterface:
             fantasy_team = from_date.iloc[0]['teamID']
         else:
             fantasy_team = ""
-        
-        return (fantasy_team, nba_team)
-    
-    def teamID_lookup(self, teamID):
 
+        return (fantasy_team, nba_team)
+
+    def teamID_lookup(self, teamID: str) -> tuple:
+        """
+        Gets the manager and team names, given
+        the Yahoo team id
+
+        Args:
+            teamID (str): Yahoo unique identifier for the team
+
+        Returns:
+            tuple: (manager name, team name)
+        """
+
+        # Build the lookup table
         if self.fantasy_teams is None:
             self.fantasy_teams = self.get_fantasy_teams()
             self.fantasy_teams.index = self.fantasy_teams.teamID
-        
-        return (self.fantasy_teams.at[teamID, 'manager'], 
+
+        return (self.fantasy_teams.at[teamID, 'manager'],
                 self.fantasy_teams.at[teamID, 'teamName'])
+
+    def games_in_week(self, nba_team: str, week: int,
+                      upto: Union[str, datetime.datetime] = "") -> Union[int, tuple]:
+        """
+        Returns the number of games in the given fantasy
+        week for the given nba team
+
+        Args:
+            nba_team (str): NBA team 3 letter abbreviation
+                            i.e., GSW
+            week (int): Yahoo week in the season
+            upto (str or datetime): instead return games
+                                    before and after the given
+                                    date (upto date is in before)
+
+        Returns:
+            int: number of games
+        """
+        # Load table
+        if self.games_per_day is None:
+            self.games_per_day = self.get_games_per_day()
+
+        start_day_str, end_day_str = self.week_date_range(week)
+        start_day = datetime.datetime.strptime(start_day_str,
+                                               utils.DATE_SCHEMA)
+        end_day = datetime.datetime.strptime(end_day_str,
+                                             utils.DATE_SCHEMA)
+
+        if isinstance(upto, str) and upto != "":
+            upto_dt = datetime.datetime.strptime(upto, utils.DATE_SCHEMA)
+        elif upto == "":
+            upto_dt = end_day
+        elif isinstance(upto, datetime.datetime):
+            upto_dt = upto
+
+        counts = [0, 0]
+        for date in pd.date_range(start_day, end_day, freq='D'):
+            date_str = date.strftime(utils.DATE_SCHEMA)
+            if date <= upto_dt:
+                counts[0] += self.games_per_day.at[date_str, nba_team]
+            else:
+                counts[1] += self.games_per_day.at[date_str, nba_team]
+
+        if isinstance(upto, str) and upto != "":
+            return counts[0]
+        else:
+            return counts
+
+    def matchup_score():
+        # Maybe modify table to be games per day
     
-    def games_in_week(self, nba_team, week):
+        
+## TODO: Make a lookup player stats method to get stats for one individual player
 
-        if self.games_per_week is None:
-            self.games_per_week = self.get_games_per_week()
+## TODO: Make games played this week so far function using unique values of (date, team) in player_stats
 
-        return self.games_per_week.at[week, nba_team]
-
+## TODO: Make a function that gets the matchup score on any given day by summing player stats
 
 
-# Helper function for finding the closest date
-def find_closest_date(d, dates):
+
+
+def find_closest_date(d: Union[str, datetime.datetime],
+                      dates: list):
     """
-    Finds the index of the closest date in 
+    Finds the index of the closest date in
     dates to the date d. If d/dates
     are strings, assumes they are in the default
     date format.
 
     Args:
-        d (str or datetime): _description_
-        dates (list of str or datetime): _description_
+        d (str or datetime): date to find the closest entry to
+        dates (list of str or datetime): list of dates to compare to
     """
 
     if isinstance(d, str):
         d = datetime.datetime.strptime(d, utils.DATE_SCHEMA)
-    
+
     closest_i = 0
     diff = np.inf
     for i in range(len(dates)):
@@ -242,19 +381,9 @@ def find_closest_date(d, dates):
         if diff2 < diff:
             diff = diff2
             closest_i = i
-    
+
     return closest_i
 
 
-
-    
-
-
-## TODO: Make season an input for the constructor
-        
-
-## TODO: Make a lookup player stats method to get stats for one individual player
-
-## TODO: Make games played this week so far function using unique values of (date, team) in player_stats
-
-## TODO: Make a function that gets the matchup score on any given day by summing player stats
+if __name__ == "__main__":
+    db = dbInterface("yahoo_save.sqlite")
