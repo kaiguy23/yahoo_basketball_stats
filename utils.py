@@ -29,6 +29,16 @@ NBA_TO_YAHOO_STATS = {"TOV": "TO",
                       "FG3M": "3PTM",
                       "STL": "ST"}
 
+STATS_COLS = ["3PTM", "PTS",
+              "REB", "AST", "ST", "BLK",
+              "TO", "FGM", "FGA", "FTM",
+              "FTA"]
+
+PERC_STATS = ["FG%", "FT%"]
+
+ACTIVE_POS = ['C', 'PF', 'PG', 'SF',
+              'F', 'SG', 'Util', 'G']
+
 NBA_TEAMS = ['ATL','BKN','BOS','CHA','CHI','CLE',
              'DAL','DEN','DET','GSW','HOU','IND',
              'LAC','LAL','MEM','MIA','MIL','MIN',

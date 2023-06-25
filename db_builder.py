@@ -2,7 +2,7 @@
 # Builds a databse for use in fantasy basketball analysis.
 # Season is of format 2022-23
 # Tables are 
-#   1) (title: PLAYER_STATS_{SEASON}) Each player's stats for each game in a season
+#   1) (title: NBA_STATS_{SEASON}) Each player's stats for each game in a season
 #       - This table also shows which fantasy team they were rostered on (if any) at game time, and what their position was
 #
 #   2) (title: NBA_SCHEDULE_{SEASON}) NBA schedule for a given season, i.e. games and which team is playing 
@@ -69,8 +69,10 @@ class dbBuilder:
         tables = self.table_names()
         if tables == []:
             return False
-        else:
+        elif table_name in [x[0] for x in tables]:
             return True
+        else:
+            return False
 
     def delete_table(self, table_name):
         self.cur.execute(f"DROP TABLE {table_name}")
@@ -151,8 +153,10 @@ class dbBuilder:
         fantasy_rosters = fantasy_rosters.groupby("date")
 
         # Figure out how far existing stats go
-        table_name = f"PLAYER_STATS_{self.season}"
+        table_name = f"NBA_STATS_{self.season}"
         table_exists = self.check_table_exists(table_name=table_name)
+
+        print(table_exists)
 
         if self.debug:
             print("Updating Player Stats")
@@ -196,8 +200,12 @@ class dbBuilder:
             new_df = nba_stats.copy(deep=True)
             cols_to_add = ["status", "position_type", "eligible_positions",
                            "selected_position","teamID", "manager", "teamName"]
+            
             for col in cols_to_add:
                 new_df[col] = ""
+            
+            # Add fantasy week
+            new_df["week"] = ""
             
 
             # Add fantasy information for players that are there
@@ -206,6 +214,10 @@ class dbBuilder:
                     f_stats = fantasy.get_group(row['PLAYER_NAME']).iloc[0]
                     for col in cols_to_add:
                         new_df.at[i, col] = f_stats[col]
+                date = row["GAME_DATE"]
+                new_df.at[i, "week"] = db_reader.week_for_date(date)
+
+
             
             all_entries.append(new_df)
 
@@ -285,7 +297,7 @@ class dbBuilder:
         for week in range(start_week, end_week+1):
 
             if self.debug:
-                print("Getting Num Games Per Day", week)
+                print("Getting Num Games Per Day For Week: ", week)
 
             start_day_str, end_day_str = db_reader.week_date_range(week)
             start_day = datetime.datetime.strptime(start_day_str,
@@ -305,12 +317,12 @@ class dbBuilder:
                 games = nba_by_day.get_group(date_str)
                 # Count each team that played today
                 for team in all_teams:
-                    if team in games["TEAM_ABBREVIATION"]:
+                    if team in games["TEAM_ABBREVIATION"].values:
                         n_games[team] = 1
                     else:
                         n_games[team] = 0
 
-            all_days.append(n_games)
+                all_days.append(n_games)
 
         all_days = pd.DataFrame(all_days)
         all_days.set_index("week", inplace=True)
@@ -464,9 +476,9 @@ class dbBuilder:
         self.update_fantasy_teams()
         self.update_fantasy_schedule()
         self.update_fantasy_rosters(pace=False)
-        self.update_player_stats()
+        self.update_nba_stats()
         self.update_nba_schedule()
-        self.update_num_games_per_week()
+        self.update_num_games_per_day()
         self.update_nba_rosters()
             
 
@@ -474,8 +486,12 @@ class dbBuilder:
 if __name__ == "__main__":
 
     f = "yahoo_save.sqlite"
-    # builder = dbBuilder(f, debug=True)
+
+    builder = dbBuilder(f, debug=True)
     
+    builder.delete_table('NBA_STATS_2022_23')
+    builder.update_nba_stats()
+    # builder.update_num_games_per_day()
 
     con = sqlite3.connect(f)
     cur = con.cursor()
