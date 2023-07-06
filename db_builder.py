@@ -144,7 +144,7 @@ class dbBuilder:
         """Must be run AFTER updating fantasy rosters
         """
         # Start and end days to get stats for
-        db_reader = dbInterface(f)
+        db_reader = dbInterface(self.db_file)
         start_day = db_reader.week_date_range(1)[0]
         end_day = db_reader.week_date_range(self.lg.end_week())[1]
 
@@ -233,7 +233,7 @@ class dbBuilder:
         table_exists = self.check_table_exists(table_name=table_name)
 
         # Get all the NBA teams and their NBA TEAM_ID
-        db_reader = dbInterface(f)
+        db_reader = dbInterface(self.db_file)
         nba_schedule = db_reader.get_nba_schedule()
         nba_by_team = nba_schedule.groupby("TEAM_ABBREVIATION")
 
@@ -281,7 +281,7 @@ class dbBuilder:
         table_name = f"GAMES_PER_DAY_{self.season}"
 
         # Get the fantasy and nba schedules
-        db_reader = dbInterface(f)
+        db_reader = dbInterface(self.db_file)
         fantasy_schedule = db_reader.get_fantasy_schedule()
         nba_schedule = db_reader.get_nba_schedule()
         all_teams = sorted(nba_schedule["TEAM_ABBREVIATION"].unique())
@@ -405,6 +405,9 @@ class dbBuilder:
         if self.debug:
             print("Updating Fantasy Rosters")
 
+        # Reader for discerning weeks
+        db_reader = dbInterface(self.db_file)
+
         start_day = self.lg.week_date_range(1)[0]
         end_day = self.lg.week_date_range(self.lg.end_week())[1]
 
@@ -434,6 +437,7 @@ class dbBuilder:
                 
                 # Add date information
                 current_roster['date'] = date.strftime(utils.DATE_SCHEMA)
+                current_roster['week'] = db_reader.week_for_date(current_roster['date'])
 
                 # Add team information
                 for col in ["teamID", "manager", "teamName"]:
@@ -471,7 +475,6 @@ class dbBuilder:
 
         return
         
-        
     def update_db(self):
         self.update_fantasy_teams()
         self.update_fantasy_schedule()
@@ -480,7 +483,6 @@ class dbBuilder:
         self.update_nba_schedule()
         self.update_num_games_per_day()
         self.update_nba_rosters()
-            
 
 
 if __name__ == "__main__":
@@ -488,9 +490,9 @@ if __name__ == "__main__":
     f = "yahoo_save.sqlite"
 
     builder = dbBuilder(f, debug=True)
-    
-    builder.delete_table('NBA_STATS_2022_23')
-    builder.update_nba_stats()
+
+    # builder.delete_table('NBA_STATS_2022_23')
+    # builder.update_nba_stats()
     # builder.update_num_games_per_day()
 
     con = sqlite3.connect(f)
@@ -498,18 +500,3 @@ if __name__ == "__main__":
 
 
     db = dbInterface(f)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
