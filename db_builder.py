@@ -489,8 +489,8 @@ if __name__ == "__main__":
 
     builder = dbBuilder(f, debug=True)
     
-    builder.delete_table('NBA_STATS_2022_23')
-    builder.update_nba_stats()
+    # builder.delete_table('NBA_STATS_2022_23')
+    # builder.update_nba_stats()
     # builder.update_num_games_per_day()
 
     con = sqlite3.connect(f)
