@@ -393,15 +393,28 @@ class dbInterface:
         """
         # Check upto is in the right week
         if isinstance(upto, str):
+            # Convert from string to date
             if upto != "":
                 if not self.week_for_date(upto) == week:
                     raise(ValueError, "upto not in correct week")
+                else:
+                    upto = datetime.datetime.strptime(upto,
+                                                      utils.DATE_SCHEMA)
+            else:
+                upto = datetime.datetime.strptime(self.week_date_range(week)[1],
+                                                  utils.DATE_SCHEMA)
+
         elif not self.week_for_date(upto) == week:
             raise(ValueError, "upto not in correct week")
 
-        # Get all stats entries from the week where 
+        # Get all stats entries from the week where
         # people actually played
         stats = self.get_nba_stats(f"WHERE week = {week}")
+
+        # Filter based on date
+        to_keep = [datetime.datetime.strptime(x, utils.DATE_SCHEMA) <= upto
+                   for x in stats['GAME_DATE']]
+        stats = stats[to_keep]
         stats = stats[stats["selected_position"].isin(utils.ACTIVE_POS)]
         stats = stats.groupby("teamID")
 
@@ -409,19 +422,20 @@ class dbInterface:
         sched = self.get_fantasy_schedule(f"WHERE week = {week}")
         sched.index = sched.teamID
 
-        
+
         for team in sched.teamID:
-            team_stats = stats[team]
+            team_stats = stats.get_group(team)
             for stat in utils.STATS_COLS:
                 sched.at[team, stat] = team_stats[stat].sum()
             for stat in utils.PERC_STATS:
-                # TODO: CALCULATE PERCENTAGE STATS
-                return
+                attempts = stat.replace("%", "A")
+                made = stat.replace("%", "M")
+                sched.at[team, stat] = (sched.at[team, made] /
+                                        sched.at[team, attempts])
+
+        return sched
 
 
-
-
-        return
         # Maybe modify table to be games per day
     
 
