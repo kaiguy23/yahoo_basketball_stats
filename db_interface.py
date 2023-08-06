@@ -436,16 +436,6 @@ class dbInterface:
         return sched
 
 
-        # Maybe modify table to be games per day
-    
-
-## TODO: Make games played this week so far function using unique values of (date, team) in player_stats
-
-## TODO: Make a function that gets the matchup score on any given day by summing player stats
-
-
-
-
 def find_closest_date(d: Union[str, datetime.datetime],
                       dates: list):
     """

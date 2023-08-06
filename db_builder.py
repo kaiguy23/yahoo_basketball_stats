@@ -490,11 +490,7 @@ if __name__ == "__main__":
     f = "yahoo_save.sqlite"
 
     builder = dbBuilder(f, debug=True)
-<<<<<<< HEAD
     
-=======
-
->>>>>>> 26f97ea5432b38cd09c82b33f1038d4ca6786806
     # builder.delete_table('NBA_STATS_2022_23')
     # builder.update_nba_stats()
     # builder.update_num_games_per_day()

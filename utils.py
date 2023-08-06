@@ -16,7 +16,7 @@ from nba_api.stats.endpoints import scoreboard
 
 # Get the default season
 TODAY = datetime.date.today()
-if TODAY.month > 7:
+if TODAY.month >= 10:
     DEFAULT_SEASON = f"{TODAY.year}_{str(TODAY.year+1)[-2:]}"
 else:
     DEFAULT_SEASON = f"{TODAY.year-1}_{str(TODAY.year)[-2:]}"

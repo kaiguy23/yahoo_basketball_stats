@@ -12,6 +12,7 @@ dependencies:
   - ipykernel
   - tqdm
   - pyaml
+  - pytest
   - pip
   - pip:
     - nba_api
