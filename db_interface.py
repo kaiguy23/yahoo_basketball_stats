@@ -374,7 +374,7 @@ class dbInterface:
             return counts
 
     def matchup_score(self, week: int,
-                      upto: Union[str, datetime.datetime] = ""):
+                      upto: Union[str, datetime.datetime] = "") -> pd.DataFrame:
         """
         Returns the matchup score for a given week,
         optionally upto (including) a date within that
@@ -389,7 +389,7 @@ class dbInterface:
                                     date (upto date is in before)
 
         Returns:
-            int: number of games
+            pd.DataFrame: matchups for the week with scores
         """
         # Check upto is in the right week
         if isinstance(upto, str):
@@ -437,7 +437,7 @@ class dbInterface:
 
 
 def find_closest_date(d: Union[str, datetime.datetime],
-                      dates: list):
+                      dates: list) -> int:
     """
     Finds the index of the closest date in
     dates to the date d. If d/dates
@@ -447,6 +447,9 @@ def find_closest_date(d: Union[str, datetime.datetime],
     Args:
         d (str or datetime): date to find the closest entry to
         dates (list of str or datetime): list of dates to compare to
+    
+    Returns:
+        int: index of the closest date in dates to the input d
     """
 
     if isinstance(d, str):

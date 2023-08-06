@@ -1,6 +1,6 @@
 ####
 # Builds a databse for use in fantasy basketball analysis.
-# Season is of format 2022-23
+# Season is of format 2022_23
 # Tables are 
 #   1) (title: NBA_STATS_{SEASON}) Each player's stats for each game in a season
 #       - This table also shows which fantasy team they were rostered on (if any) at game time, and what their position was
@@ -43,7 +43,21 @@ class dbBuilder:
 
     def __init__(self, db_file: str,
                  oauth_file: str = 'yahoo_oauth.json',
-                 season: str = utils.DEFAULT_SEASON, debug=False):
+                 season: str = utils.DEFAULT_SEASON,
+                 debug=False):
+        """
+        Object that interfaces with the yahoo fantasy and nba api's to 
+        build a local database of fantasy and real-world stats.
+
+        Args:
+            db_file (str): Path to database file
+            oauth_file (str, optional): Path to yahoo authorization file.
+                                        Defaults to 'yahoo_oauth.json'.
+            season (str, optional): Season to consider (form is 2022_23).
+                                    Defaults to utils.DEFAULT_SEASON.
+            debug (bool, optional): Whether to print additional statements for debugging.
+                                    Defaults to False.
+        """
 
         self.oauth_file = oauth_file
         self.sc, self.gm, self.lg = utils.refresh_oauth_file(self.oauth_file)
@@ -54,17 +68,39 @@ class dbBuilder:
         self.debug = debug
 
     def __del__(self):
+        """
+        Closes the database connection on deletion
+        """
         self.con.close()
 
     def refresh_oath(self):
+        """
+        Refreshes the Yahoo OAUTH access
+        """
         self.sc, self.gm, self.lg = utils.refresh_oauth_file(self.oauth_file)
 
-    def table_names(self):
+    def table_names(self) -> list[tuple[str]]:
+        """
+        Returns a list of all tables present in the database
+
+        Returns:
+            list[tuple[str]]: all tables present in the database
+        """
 
         return self.cur.execute("SELECT name FROM sqlite_master\
                                 WHERE type='table'").fetchall()
 
-    def check_table_exists(self, table_name):
+    def check_table_exists(self, table_name: str) -> bool:
+        """
+        Checks whether a specified table exists in the 
+        database
+
+        Args:
+            table_name (str): Name of the table to check for
+
+        Returns:
+            bool: True if the table is present, False if it is not
+        """
 
         tables = self.table_names()
         if tables == []:
@@ -74,10 +110,26 @@ class dbBuilder:
         else:
             return False
 
-    def delete_table(self, table_name):
+    def delete_table(self, table_name: str):
+        """
+        Deletes the specified table, if it exists
+
+        Args:
+            table_name (str): Name of the table to delete
+        """
         self.cur.execute(f"DROP TABLE {table_name}")
 
     def update_fantasy_schedule(self):
+        """
+        Updates the fantasy schedule table in the database.
+
+        If the table does not exist, gathers the schedule through
+        the end of the season. 
+
+        If the table does exist, starts with the most recent week that
+        does not have statistics present (i.e., PTS == 0) and goes
+        through the end of the season.
+        """
         
         # Get information about the current time in the league
         start_week = 1
@@ -141,7 +193,19 @@ class dbBuilder:
 
 
     def update_nba_stats(self):
-        """Must be run AFTER updating fantasy rosters
+        """
+        NOTE: Must be run AFTER updating fantasy rosters
+
+        Updates the nba player stats table in the database. Additionally
+        adds fantasy relevant columns:
+
+        -  ["status", "position_type", "eligible_positions",
+            "selected_position","teamID", "manager", "teamName",
+            "week"]
+
+        Starts at the most recent day stats are present for and goes through
+        the current day.
+
         """
         # Start and end days to get stats for
         db_reader = dbInterface(self.db_file)
@@ -156,7 +220,6 @@ class dbBuilder:
         table_name = f"NBA_STATS_{self.season}"
         table_exists = self.check_table_exists(table_name=table_name)
 
-        print(table_exists)
 
         if self.debug:
             print("Updating Player Stats")
@@ -227,7 +290,14 @@ class dbBuilder:
         return 
     
     def update_nba_rosters(self):
-        # MUST RUN AFTER NBA SCHEDULE
+        """
+        NOTE: Must be run after nba_schedule
+
+        Updates the nba rosters table in the database to reflect
+        the current rosters from nba.com.
+
+        Completely replaces the table every time.
+        """
 
         table_name = f"NBA_ROSTERS_{self.season}"
         table_exists = self.check_table_exists(table_name=table_name)
@@ -272,12 +342,15 @@ class dbBuilder:
 
     def update_num_games_per_day(self):
         """
-        Regenerates the number of games per day table from
-        the nba schedule table.
+        NOTE: Must be run after nba_schedule & fantasy_schedule
+
+        Creates a table where each row is a date, and the columns represent
+        whether an nba team played on that date or not. Also adds the fantasy
+        week.
+
+        Completely regenerates the table every time from the nba/fantasy schedule tables.
         """
 
-        # MUST BE RUN AFTER UPDATE NBA SCHEDULE
-        # AND UPDATE FANTASY SCHEDULE
         table_name = f"GAMES_PER_DAY_{self.season}"
 
         # Get the fantasy and nba schedules
@@ -332,8 +405,17 @@ class dbBuilder:
 
         return
 
-    # NOTE: SLOW because we have to do an API request for each day
+
     def update_nba_schedule(self):
+        """
+        NOTE: SLOW because we have to do an API request for each day
+
+        Updates the nba schedule table in the database.
+
+        If the table exists, begins from the most recent day that doesn't 
+        have final scores on the games.
+
+        """
         
         start_day = self.lg.week_date_range(1)[0]
         end_day = self.lg.week_date_range(self.lg.end_week())[1]
@@ -395,12 +477,31 @@ class dbBuilder:
         return
 
     def update_fantasy_teams(self):
+        """
+        Updates the fantasy teams table in the database
+
+        Completely replaces the table each time, reflects current team/names
+        """
         team_df = utils.get_team_ids(self.sc,self.lg).drop('teamObject', axis=1)
         team_df.to_sql("CURRENT_FANTASY_TEAMS", self.con, if_exists="replace",index=False)
         return 
 
 
-    def update_fantasy_rosters(self, pace = False, limit_per_hour=300):
+    def update_fantasy_rosters(self, pace=False, limit_per_hour=300):
+        """
+        NOTE: Will go over the max yahoo hourly requests if doing
+              many weeks at a time.
+    
+        Updates the fantasy rosters table in the database.
+
+        If the table exists, begins on the most recent day where
+        rosters are present.
+
+        Args:
+            pace (bool, optional): Whether to pause at the specified number of requests per hour.
+                                   Defaults to False.
+            limit_per_hour (int, optional): Hourly limit of requests. Defaults to 300.
+        """
 
         if self.debug:
             print("Updating Fantasy Rosters")
@@ -476,6 +577,9 @@ class dbBuilder:
         return
         
     def update_db(self):
+        """
+        Updates the database in the correct order
+        """
         self.update_fantasy_teams()
         self.update_fantasy_schedule()
         self.update_fantasy_rosters(pace=False)
@@ -490,7 +594,6 @@ if __name__ == "__main__":
     f = "yahoo_save.sqlite"
 
     builder = dbBuilder(f, debug=True)
-    
     # builder.delete_table('NBA_STATS_2022_23')
     # builder.update_nba_stats()
     # builder.update_num_games_per_day()
