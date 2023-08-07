@@ -27,6 +27,8 @@
 
 ## TODO: Make a logger?
 
+## TODO: Make the CURRENT_FANTASY_TEAMS table have a season in the name?
+
 import sqlite3
 import datetime
 import time

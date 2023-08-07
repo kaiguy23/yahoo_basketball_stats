@@ -192,6 +192,7 @@ class dbInterface:
                                           fantasy_schedule.teamID.iloc[-1]]
             self.weeks = self.weeks[['week', 'startDate', 'endDate']]
             self.weeks.index = self.weeks.week
+
         if isinstance(date, str):
             date = datetime.datetime.strptime(date, utils.DATE_SCHEMA)
 
@@ -206,15 +207,17 @@ class dbInterface:
         return -1
             
     def week_date_range(self, week: int,
-                        season: str = utils.DEFAULT_SEASON) -> tuple:
+                        season: str = utils.DEFAULT_SEASON) -> tuple[str]:
         """
-        Returns the start and end date of the specified week
+        Returns the start and end date of the specified week.
+
+        Returns -1 if the week is not present.
 
         Args:
             week (int): Yahoo week in the season
 
         Returns:
-           tuple: (first day, last day)
+           tuple[str]: (first day, last day)
         """
 
         # Build the weeks dataframe if it hasn't been built yet
@@ -224,6 +227,10 @@ class dbInterface:
                                           fantasy_schedule.teamID.iloc[-1]]
             self.weeks = self.weeks[['week', 'startDate', 'endDate']]
             self.weeks.index = self.weeks.week
+        
+        # Check if week is valid
+        if week not in self.weeks.week:
+            return -1
 
         # Return the start and end dates
         return (self.weeks.at[week, 'startDate'],
@@ -245,24 +252,25 @@ class dbInterface:
 
         if isinstance(date, str):
             date = datetime.datetime.strptime(date, utils.DATE_SCHEMA)
+
         date_str = date.strftime(utils.DATE_SCHEMA)
 
         # Generate lookups if they haven't been made yet
         if self.fantasy_lookup is None:
             self.fantasy_lookup = self.get_fantasy_rosters().groupby("name")
         if self.nba_stats is None:
-            self.nba_stats = self.get_player_stats().groupby("PLAYER_NAME")
+            self.nba_stats = self.get_nba_stats().groupby("PLAYER_NAME")
         if self.nba_rosters is None:
             self.nba_rosters = self.get_nba_rosters().groupby("PLAYER_NAME")
 
         # Find which NBA team the player was on for the specified date
         if name in self.nba_stats.indices:
             entries = self.nba_stats.get_group(name)
-            closest_i = find_closest_date(date, entries["GAME_DATE"].values)
+            closest_i = utils.find_closest_date(date, entries["GAME_DATE"].values)
             nba_team = entries.iloc[closest_i]["TEAM_ABBREVIATION"]
         else:
             entries = self.nba_rosters.get_group(name)
-            closest_i = find_closest_date(date, entries["DATE"].values)
+            closest_i = utils.find_closest_date(date, entries["DATE"].values)
             nba_team = entries.iloc[closest_i]["TEAM_ABBREVIATION"]
 
         # Check if the player was on a fantasy roster that day
@@ -289,9 +297,14 @@ class dbInterface:
 
         # Generate lookups if they haven't been made yet
         if self.nba_stats is None:
-            self.nba_stats = self.get_player_stats().groupby("PLAYER_NAME")
+            self.nba_stats = self.get_nba_stats().groupby("PLAYER_NAME")
         
-        return self.nba_stats[name]
+        if name in self.nba_stats.groups:
+            return self.nba_stats.get_group(name)
+        
+        # Return empty df with the right columns if not there
+        else:
+            return self.get_nba_stats().iloc[:0]
 
 
     def teamID_lookup(self, teamID: str) -> tuple:
@@ -315,7 +328,7 @@ class dbInterface:
                 self.fantasy_teams.at[teamID, 'teamName'])
 
     def games_in_week(self, nba_team: str, week: int,
-                      upto: Union[str, datetime.datetime] = "") -> Union[int, tuple]:
+                      upto: Union[str, datetime.datetime] = "") -> Union[int, tuple[int]]:
         """
         Returns the number of games in the given fantasy
         week for the given nba team
@@ -369,9 +382,9 @@ class dbInterface:
             if upto == "":
                 return counts[0]
             else:
-                return counts
+                return tuple(counts)
         else:
-            return counts
+            return tuple(counts)
 
     def matchup_score(self, week: int,
                       upto: Union[str, datetime.datetime] = "") -> pd.DataFrame:
@@ -434,39 +447,6 @@ class dbInterface:
                                         sched.at[team, attempts])
 
         return sched
-
-
-def find_closest_date(d: Union[str, datetime.datetime],
-                      dates: list) -> int:
-    """
-    Finds the index of the closest date in
-    dates to the date d. If d/dates
-    are strings, assumes they are in the default
-    date format.
-
-    Args:
-        d (str or datetime): date to find the closest entry to
-        dates (list of str or datetime): list of dates to compare to
-    
-    Returns:
-        int: index of the closest date in dates to the input d
-    """
-
-    if isinstance(d, str):
-        d = datetime.datetime.strptime(d, utils.DATE_SCHEMA)
-
-    closest_i = 0
-    diff = np.inf
-    for i in range(len(dates)):
-        d2 = dates[i]
-        if isinstance(d2, str):
-            d2 = datetime.datetime.strptime(d2, utils.DATE_SCHEMA)
-        diff2 = abs((d - d2).days)
-        if diff2 < diff:
-            diff = diff2
-            closest_i = i
-
-    return closest_i
 
 
 if __name__ == "__main__":

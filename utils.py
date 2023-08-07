@@ -5,8 +5,10 @@ import math
 import numpy as np
 import pandas as pd
 import datetime
+from typing import Union
 
 from yahoo_oauth import OAuth2
+
 import yahoo_fantasy_api as yfa
 
 
@@ -27,6 +29,9 @@ TODAY_STR = TODAY.strftime(DATE_SCHEMA)
 # Map of NBA API stat column labels to change
 NBA_TO_YAHOO_STATS = {"TOV": "TO",
                       "FG3M": "3PTM",
+                      "FG3A": "3PTA",
+                      "FG3_PCT": "3PT%",
+                      "FG_PCT": "FG%",
                       "STL": "ST"}
 
 STATS_COLS = ["3PTM", "PTS",
@@ -76,6 +81,41 @@ def yahoo_to_nba_name(name, hardcoded = SPECIAL_NAMES):
             except Exception as e:
                 print(e)
                 raise ValueError(f"Player {name} not found")
+
+
+def find_closest_date(d: Union[str, datetime.datetime],
+                      dates: list) -> int:
+    """
+    Finds the index of the closest date in
+    dates to the date d. If d/dates
+    are strings, assumes they are in the default
+    date format.
+
+    Tie goes to the earlier index.
+
+    Args:
+        d (str or datetime): date to find the closest entry to
+        dates (list of str or datetime): list of dates to compare to
+    
+    Returns:
+        int: index of the closest date in dates to the input d
+    """
+
+    if isinstance(d, str):
+        d = datetime.datetime.strptime(d, DATE_SCHEMA)
+
+    closest_i = 0
+    diff = np.inf
+    for i in range(len(dates)):
+        d2 = dates[i]
+        if isinstance(d2, str):
+            d2 = datetime.datetime.strptime(d2, DATE_SCHEMA)
+        diff2 = abs((d - d2).days)
+        if diff2 < diff:
+            diff = diff2
+            closest_i = i
+
+    return closest_i
 
 
 def num_games_played(start_date, end_date):
