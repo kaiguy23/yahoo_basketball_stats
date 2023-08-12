@@ -53,7 +53,23 @@ NBA_TEAMS_SET = set(NBA_TEAMS)
 
 
 SPECIAL_NAMES = {}
-def yahoo_to_nba_name(name, hardcoded = SPECIAL_NAMES):
+def yahoo_to_nba_name(name: str, hardcoded: dict = SPECIAL_NAMES) -> str:
+    """
+    Converts a yahoo API name to NBA api name. By in large they have the
+    same name, but some players with abbreviations, like OG Anunoby
+    (or O.G. Anunoby as the NBA api believes) have some inconsistencies.
+
+    Args:
+        name (str): yahoo api player name
+        hardcoded (dict, optional): Dictionary to hardcode names not found
+                                    automatically.
+
+    Raises:
+        ValueError: If player is not found
+
+    Returns:
+        str: NBA api name
+    """
     # hardcoded 
     if name in hardcoded:
         return hardcoded[name]
@@ -118,239 +134,7 @@ def find_closest_date(d: Union[str, datetime.datetime],
     return closest_i
 
 
-def num_games_played(start_date, end_date):
-    """
-    Returns a dictionary that says how many games each 
-    team plays between a start and end date (both sides inclusive)
-
-    Args:
-        start_date (datetime obj): start date
-        end_date (datetime obj): end date
-    """
-    # Build dictionary of teams and how many games they've played
-    games_played = {}
-    dates = {}
-    for date in pd.date_range(start_date, end_date, freq='D'):
-        game_date=date.strftime("%m/%d/%Y")
-        try:
-            sb = scoreboard.Scoreboard(game_date=game_date)
-            teams = sb.get_data_frames()[1]["TEAM_ABBREVIATION"].values
-            dates[date] = teams
-            for t in teams:
-                if t in games_played:
-                    games_played[t]+=1
-                else:
-                    games_played[t] = 1
-        except Exception as e:
-            print("no games on", game_date)
-            raise(e)
-    return games_played, dates
-
-
-def num_games_played_per_week(league, week):
-    """
-    Returns a dictionary that says how many games each nba 
-    team plays in each given week of the league
-
-    Args:
-        league: yahoo api league object
-    """
-    # Build dictionary of teams and how many games they've played
-    start_date, end_date = league.week_date_range(week)
-    return num_games_played(start_date, end_date)
-
-
-def get_all_taken_players_extra(sc, league, week, include_today=False, actual_played=False):
-    """
-    Returns a dictionary of all taken players, with entries appended
-    for:
-        1) which NBA team they're on
-        2) which fantasy team they're on 
-        3) what position they are currently placed on for fantasy (to check if they're on IL)
-        4) how many games they have played already this week (does not count games today by default)
-        5) how many games total they have on the calendar for this week
-        6) nba api name
-    
-    Args:
-        sc: yahoo oauth object
-        league: yahoo api league object
-        week: int yahoo week to return number of games for
-        include_today: include today as games played
-
-    """
-    cur_wk = league.current_week()
-
-
-    # Get games played information for nba teams
-    this_week, teams_playing = num_games_played_per_week(league, week)
-    d0, df = league.week_date_range(week)
-    if d0 <= TODAY <= df:
-        if include_today:
-            up_today = num_games_played(d0, TODAY)[0]
-        else:
-            up_today = num_games_played(d0, TODAY - datetime.timedelta(days=1))[0]
-    else:
-        up_today = {}
-    for t in this_week:
-        if t not in up_today:
-            up_today[t] = 0
-
-    # Get player logs to determine nba team
-    logs = get_all_player_logs()
-
-    # get the roster for all the teams in the fantasy league for today
-    # key is player name goes to teamID, manager, teamName, status, position_type, eligible_positions, and selected_position
-    tp = [] # list of all taken players
-    teamDF = get_team_ids(sc, league)
-    actual_num_played = {}
-
-    for i,row in teamDF.iterrows():
-        manager = row['manager']
-        # If we're looking at the past
-        if week != cur_wk or (TODAY==df and include_today):
-            if actual_played:
-                for date in pd.date_range(d0, df, freq='D'):
-                    team_roster = row['teamObject'].roster(day=date)
-                    for p in team_roster:
-                        pos = p['selected_position']
-                        status = p['status']
-                        name = yahoo_to_nba_name(p['name'])
-                        nba_team = get_nba_team(name, logs)
-
-                        # Catches players that have never played this year
-                        # Looking at you Chi Yen/Lonzo Ball
-                        try:
-                            player_stats = logs.get_group(name)
-                        except:
-                            continue
-
-                        played = ("IL" not in pos) and ("BN" not in pos) and (nba_team in teams_playing[date])
-                        if played:
-                            # Now check to see if they had any stats -- to show if they missed
-                            # due to injury or gtd
-                            game_stats = player_stats[date.strftime("%Y-%m-%dT00:00:00") == player_stats.GAME_DATE]
-                            if game_stats.shape[0] < 1:
-                                # print(p, "missed on", date)
-                                continue
-                            elif game_stats.iloc[0]['MIN'] == 0:
-                                # print(p, "missed on", date)
-                                continue
-                            if p['name'] not in actual_num_played:
-                                actual_num_played[p['name']] = {"date":[date.date()], 
-                                                        "manager":[manager],
-                                                        "teamName":[row['teamName']],
-                                                        "name":p['name'],
-                                                        "selected_position":pos,
-                                                        "eligible_positions": p['eligible_positions'],
-                                                        "status": status}
-                            else:
-                                actual_num_played[p['name']]['date'] += [date.date()]
-                                actual_num_played[p['name']]['manager'] += [manager]
-                                actual_num_played[p['name']]['teamName'] += [row['teamName']]
-
-            else:
-                team_roster = row['teamObject'].roster(day=d0)
-        else:
-            team_roster = row['teamObject'].roster()
-
-        if not actual_played:
-            for p in team_roster:
-                name = p['name']
-                info = {}
-                for k in p:
-                    info[k] = p[k]
-                p['teamID'] = row['teamID']
-                p['manager'] = manager
-                p['teamName'] = row['teamName']
-                tp.append(p)
-
-    if actual_played:
-        for p in actual_num_played:
-            tp.append(actual_num_played[p])
-    
-    players = {}
-    for p in tp:
-
-        name = yahoo_to_nba_name(p['name'])
-        entry = {}
-        entry['name'] = p['name']
-        entry['nba_name'] = name
-        entry['nba_team'] = get_nba_team(name, logs)
-       
-
-        entry['games_total'] = this_week[entry['nba_team']]
-        entry['games_played'] = up_today[entry['nba_team']]
-        entry['manager'] = p['manager']
-        entry['fantasy_team'] = p['teamName']
-        entry['selected_position'] = p['selected_position']
-        entry['eligible_positions'] = p['eligible_positions']
-        entry['status'] = p['status']
-        if actual_played:
-            entry['actual_played'] = actual_num_played[entry['name']]
-        players[name] = entry
-
-    return players
-
-def get_nba_team(nba_name, logs):
-
-    # Catch Inactive all year players
-    try:
-        team_name = logs.get_group(nba_name)["TEAM_ABBREVIATION"].iloc[0]
-    except:
-        # Hard code never played CHET
-        if nba_name == 'Chet Holmgren':
-            team_name = 'OKC'
-        else:
-            player_id = find_players_by_full_name(nba_name)[0]['id']
-            career = playercareerstats.PlayerCareerStats(player_id=player_id).get_data_frames()[0].sort_values("PLAYER_AGE")
-            team_name = career.iloc[-1]["TEAM_ABBREVIATION"][-3:]
-    
-    return team_name
-
-    
-def get_all_player_logs(season=DEFAULT_SEASON.replace("_","-")):
-    """
-    Returns a pandas groupby object that maps player name to
-    a log of all their game stats, sorted by game date with most recent first
-
-    Args:
-        season (str, optional): season in the format like 2022-23
-    """
-    stats = playergamelogs.PlayerGameLogs(season_nullable=season).get_data_frames()[0]
-    return stats.sort_values(by="GAME_DATE",ascending=False).groupby("PLAYER_NAME")
-
-def fix_names_teams(df):
-    """
-    edits the dataframe's teamName and manager columns so we can save them our correctly
-    
-
-    Parameters
-    ----------
-    df : pandas dataframe
-        contains teamName and manager columns.
-
-    Returns
-    -------
-    df : pandas dataframe
-        modified dataframe.
-
-    """
-    for idx, row in df.iterrows():
-        manager = row['manager']
-        team = row['teamName']
-        newManager = ''
-        newTeam = ''
-        for char in manager:
-            if char.isalnum() or char == ' ' or char == '-':
-                newManager += char
-        for char in team:
-            if char.isalnum() or char == ' ' or char == '-':
-                newTeam += char
-        df.loc[idx, 'manager'] = newManager
-        df.loc[idx, 'teamName'] = newTeam
-    return df
-
-def get_team_ids(sc, league):
+def get_team_ids(sc: OAuth2, league: yfa.league.League) -> pd.DataFrame:
     """
     get the team id, manager, team name, and team object for each team in the league
 
@@ -379,7 +163,12 @@ def get_team_ids(sc, league):
     return teamDF
 
 
-def refresh_oauth_file(oauthFile = 'yahoo_oauth.json', sport = 'nba', year = 2022, refresh = False):
+def refresh_oauth_file(oauthFile: str = 'yahoo_oauth.json',
+                       sport: str = 'nba',
+                       year: int = int(DEFAULT_SEASON[:4]),
+                       refresh: bool = False) -> (OAuth2,
+                                                  yfa.league.League,
+                                                  yfa.game.Game):
     """
     refresh the json file with your consumer secret and consumer key 
 
@@ -451,7 +240,9 @@ def refresh_oauth_file(oauthFile = 'yahoo_oauth.json', sport = 'nba', year = 202
     return sc, gm, currentLeague
 
 
-def extract_matchup_scores(league, week, nba_cols = True):
+def extract_matchup_scores(league: yfa.league.League,
+                           week: int,
+                           nba_cols: bool = True) -> pd.DataFrame:
     """
     extract the matchup stats for each person for the given week
 
@@ -530,7 +321,3 @@ def extract_matchup_scores(league, week, nba_cols = True):
         df['STL'] = df['ST']
 
     return df
-
-if __name__ == "__main__":
-    sc, gm, curLg = refresh_oauth_file(oauthFile = 'yahoo_oauth.json')
-    tp = get_all_taken_players_extra(sc, curLg, curLg.current_week()-1, actual_played=True)

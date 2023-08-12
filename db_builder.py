@@ -3,31 +3,34 @@
 # Season is of format 2022_23
 # Tables are 
 #   1) (title: NBA_STATS_{SEASON}) Each player's stats for each game in a season
-#       - This table also shows which fantasy team they were rostered on (if any) at game time, and what their position was
+#       - This table also shows which fantasy team they were rostered on (if any) at game time,
+#         and what their fantasy position/status was if they were rostered.
 #
-#   2) (title: NBA_SCHEDULE_{SEASON}) NBA schedule for a given season, i.e. games and which team is playing 
-#       - 
+#   2) (title: NBA_SCHEDULE_{SEASON}) NBA schedule for a given season,
+#        i.e. games and which team is playing  
 #
 #   3) (title: FANTASY_SCEHEDULE_{SEASON}) Yahoo fantasy schedule for a given season 
 #       - Updates with scores as they come in
 #       - Shows the week number and the dates associated with that week
 #
-#   4) (title: CURRENT_FANTASY_TEAMS) Current team names/id's
+#   4) (title: FANTASY_TEAMS_{SEASON}) Current team names/id's
 #
-#   5) (title: FANTASY_ROSTERS_{SEASON}) Fantasy rosters for each day through  
+#   5) (title: FANTASY_ROSTERS_{SEASON}) An entry for every player rostered every day,
+#                                        showing which team they were on and what their
+#                                        status was.
 #
-#   6) (title: GAMES_PER_DAY_{SEASON})
-#       - Shows the number of games per week for each NBA team
+#   6) (title: GAMES_PER_DAY_{SEASON}) Shows whether an NBA team played on any given day,
+#                                      along with what fantasy week it was.
 #   
-#   7) (title: NBA_ROSTERS_{SEASON}) NBA rosters for the selected season. Shows the date
-#                                    each entry was updated, so you can see when players
-#                                    switched teams
+#   7) (title: NBA_ROSTERS_{SEASON}) NBA rosters for the selected season. Only keeps the
+#                                    most recent update. Meant as a backup to find player
+#                                    affiliation if they have been injured all year.
 ####
 
 
 ## TODO: Make a logger?
 
-## TODO: Make the CURRENT_FANTASY_TEAMS table have a season in the name?
+## TODO: Add free agents so that injuries are known for non-rostered players?
 
 import sqlite3
 import datetime
@@ -60,14 +63,22 @@ class dbBuilder:
             debug (bool, optional): Whether to print additional statements for debugging.
                                     Defaults to False.
         """
+        # Save inputs 
+        self.season = season
+        self.debug = debug
 
+        # Do the Yahoo Oauth Process
         self.oauth_file = oauth_file
-        self.sc, self.gm, self.lg = utils.refresh_oauth_file(self.oauth_file)
+        self.sc = None
+        self.gm = None
+        self.lg = None
+        self.refresh_oath()
+
+        # Set up the connection to the sqlite database
         self.db_file = db_file
         self.con = sqlite3.connect(f)
         self.cur = self.con.cursor()
-        self.season = season
-        self.debug = debug
+
 
     def __del__(self):
         """
@@ -75,11 +86,18 @@ class dbBuilder:
         """
         self.con.close()
 
+
     def refresh_oath(self):
         """
         Refreshes the Yahoo OAUTH access
         """
-        self.sc, self.gm, self.lg = utils.refresh_oauth_file(self.oauth_file)
+        if self.sc is None:
+            refresh = False
+        else:
+            refresh = True
+        self.sc, self.gm, self.lg = utils.refresh_oauth_file(self.oauth_file,
+                                                             year=int(self.season[:4]),
+                                                             refresh=refresh)
 
     def table_names(self) -> list[tuple[str]]:
         """
@@ -282,7 +300,6 @@ class dbBuilder:
                 date = row["GAME_DATE"]
                 new_df.at[i, "week"] = db_reader.week_for_date(date)
 
-
             
             all_entries.append(new_df)
 
@@ -474,8 +491,6 @@ class dbBuilder:
             # So we don't do too many requests
             time.sleep(1)
 
-
-            
         return
 
     def update_fantasy_teams(self):
@@ -484,8 +499,11 @@ class dbBuilder:
 
         Completely replaces the table each time, reflects current team/names
         """
+
+        table_name = f"FANTASY_TEAMS_{self.season}"
         team_df = utils.get_team_ids(self.sc,self.lg).drop('teamObject', axis=1)
-        team_df.to_sql("CURRENT_FANTASY_TEAMS", self.con, if_exists="replace",index=False)
+        team_df.to_sql(table_name, self.con, if_exists="replace",index=False)
+
         return 
 
 
@@ -593,12 +611,12 @@ class dbBuilder:
 
 if __name__ == "__main__":
 
-    f = "yahoo_save.sqlite"
+    f = "past_season_dbs/yahoo_fantasy_2022_23.sqlite"
 
     builder = dbBuilder(f, debug=True)
-    # builder.delete_table('NBA_STATS_2022_23')
-    # builder.update_nba_stats()
-    # builder.update_num_games_per_day()
+
+    builder.delete_table("NBA_STATS_2022_23")
+    builder.update_nba_stats()
 
     con = sqlite3.connect(f)
     cur = con.cursor()

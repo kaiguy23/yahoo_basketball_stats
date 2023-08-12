@@ -5,12 +5,9 @@ sys.path.append("../")
 
 import db_interface, utils
 
+# TODO: REDO TESTS BASED ON NEW UPTO DATES FOR GAMES IN WEEK AND MATCHUP SCORE
 
-TEST_FILE = "../yahoo_save.sqlite"
-TEST_SEASON = "2022_23"
-
-
-TEST_FILE = "../yahoo_save.sqlite"
+TEST_FILE = "../past_season_dbs/yahoo_fantasy_2022_23.sqlite"
 TEST_SEASON = "2022_23"
 db = db_interface.dbInterface(TEST_FILE, TEST_SEASON)
 

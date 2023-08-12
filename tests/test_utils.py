@@ -6,11 +6,7 @@ sys.path.append("../")
 import db_interface, utils
 
 
-TEST_FILE = "../yahoo_save.sqlite"
-TEST_SEASON = "2022_23"
-
-
-TEST_FILE = "../yahoo_save.sqlite"
+TEST_FILE = "../past_season_dbs/yahoo_fantasy_2022_23.sqlite"
 TEST_SEASON = "2022_23"
 db = db_interface.dbInterface(TEST_FILE, TEST_SEASON)
 
@@ -30,3 +26,12 @@ def test_find_closest_date():
     assert utils.find_closest_date("2022-12-04", dates) == 3
     assert utils.find_closest_date("2022-12-05", dates) == 3
     assert utils.find_closest_date("2023-12-05", dates) == 4
+
+
+def test_yahoo_to_nba_name():
+
+    assert utils.yahoo_to_nba_name("Nikola Jokic") == "Nikola Jokic"
+    assert utils.yahoo_to_nba_name("OG Anunoby") == "O.G. Anunoby"
+    assert utils.yahoo_to_nba_name("Yi Sheng Ong",
+                                   {"Yi Sheng Ong": "Asian Jordan"}) == "Asian Jordan"
+

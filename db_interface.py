@@ -31,6 +31,9 @@ class dbInterface:
         self.games_per_day = None
         self.season = season
 
+        # Generate lookups
+        self.generate_lookups()
+
     def __del__(self):
         self.con.close()
 
@@ -169,8 +172,72 @@ class dbInterface:
         Returns:
             pd.DataFrame: current fantasy teams table
         """
-        table_name = "CURRENT_FANTASY_TEAMS"
+        table_name = f"FANTASY_TEAMS_{self.season}"
         return pd.read_sql_query(f"SELECT * FROM {table_name}", self.con)
+    
+
+    def generate_lookups(self) -> None:
+
+        # Generate lookups if they haven't been made yet
+        if self.fantasy_lookup is None:
+            self.fantasy_lookup = self.get_fantasy_rosters().groupby("name")
+        if self.nba_stats is None:
+            self.nba_stats = self.get_nba_stats().groupby("PLAYER_NAME")
+        if self.nba_rosters is None:
+            self.nba_rosters = self.get_nba_rosters().groupby("PLAYER_NAME")
+
+        # Build the weeks dataframe if it hasn't been built yet
+        if self.weeks is None:
+            fantasy_schedule = self.get_fantasy_schedule()
+            self.weeks = fantasy_schedule[fantasy_schedule.teamID ==
+                                          fantasy_schedule.teamID.iloc[-1]]
+            self.weeks = self.weeks[['week', 'startDate', 'endDate']]
+            self.weeks.index = self.weeks.week
+
+        # Build the lookup table
+        if self.fantasy_teams is None:
+            self.fantasy_teams = self.get_fantasy_teams()
+            self.fantasy_teams.index = self.fantasy_teams.teamID
+
+        # Load table
+        if self.games_per_day is None:
+            self.games_per_day = self.get_games_per_day()
+
+    
+    def fantasy_free_agents(self, date: Union[str, datetime.datetime]) -> tuple[str]:
+        """
+        Returns a dataframe of fantasy free agents for a given day,
+
+        i.e., players that are not on any team.
+
+        Args:
+            date (Union[str, datetime.datetime]): date in question
+
+        Returns:
+            tuple[str]: tuple of player names 
+        """
+        if not isinstance(date, str):
+            date = date.strftime(utils.DATE_SCHEMA)
+
+        on_roster = set(self.fantasy_rosters(date)["name"])
+        all_players = set(list(self.nba_rosters.groups) + list(self.nba_stats.groups))
+        return tuple([x for x in all_players if x not in on_roster])
+    
+    def fantasy_rosters(self, date: Union[str, datetime.datetime]) -> tuple[str]:
+        """
+        Returns a dataframe of fantasy rosters for a given day,
+
+        i.e., players that are on a fantasy team
+
+        Args:
+            date (Union[str, datetime.datetime]): date in question
+
+        Returns:
+            tuple[str]: tuple of player names 
+        """
+        if not isinstance(date, str):
+            date = date.strftime(utils.DATE_SCHEMA)
+        return self.get_fantasy_rosters(f"WHERE date LIKE '{date}'")
 
     def week_for_date(self, date: Union[str, datetime.datetime]) -> int:
         """
@@ -185,13 +252,6 @@ class dbInterface:
         Returns:
             int: Yahoo week number
         """
-        # Build the weeks dataframe if it hasn't been built yet
-        if self.weeks is None:
-            fantasy_schedule = self.get_fantasy_schedule()
-            self.weeks = fantasy_schedule[fantasy_schedule.teamID ==
-                                          fantasy_schedule.teamID.iloc[-1]]
-            self.weeks = self.weeks[['week', 'startDate', 'endDate']]
-            self.weeks.index = self.weeks.week
 
         if isinstance(date, str):
             date = datetime.datetime.strptime(date, utils.DATE_SCHEMA)
@@ -219,14 +279,6 @@ class dbInterface:
         Returns:
            tuple[str]: (first day, last day)
         """
-
-        # Build the weeks dataframe if it hasn't been built yet
-        if self.weeks is None:
-            fantasy_schedule = self.get_fantasy_schedule()
-            self.weeks = fantasy_schedule[fantasy_schedule.teamID ==
-                                          fantasy_schedule.teamID.iloc[-1]]
-            self.weeks = self.weeks[['week', 'startDate', 'endDate']]
-            self.weeks.index = self.weeks.week
         
         # Check if week is valid
         if week not in self.weeks.week:
@@ -235,6 +287,7 @@ class dbInterface:
         # Return the start and end dates
         return (self.weeks.at[week, 'startDate'],
                 self.weeks.at[week, 'endDate'])
+
 
     def player_affiliation(self, name: str,
                            date: Union[str, datetime.datetime]) -> tuple:
@@ -254,14 +307,6 @@ class dbInterface:
             date = datetime.datetime.strptime(date, utils.DATE_SCHEMA)
 
         date_str = date.strftime(utils.DATE_SCHEMA)
-
-        # Generate lookups if they haven't been made yet
-        if self.fantasy_lookup is None:
-            self.fantasy_lookup = self.get_fantasy_rosters().groupby("name")
-        if self.nba_stats is None:
-            self.nba_stats = self.get_nba_stats().groupby("PLAYER_NAME")
-        if self.nba_rosters is None:
-            self.nba_rosters = self.get_nba_rosters().groupby("PLAYER_NAME")
 
         # Find which NBA team the player was on for the specified date
         if name in self.nba_stats.indices:
@@ -283,10 +328,14 @@ class dbInterface:
 
         return (fantasy_team, nba_team)
 
+
     def player_stats(self, name: str) -> pd.DataFrame:
         """
         Returns all the entries from the nba stats table
         that correspond to the specified player.
+
+        Returns games sorted in chronological order, with
+        most recent games last.
 
         Args:
             name (str): name of player from nba api
@@ -294,17 +343,13 @@ class dbInterface:
         Returns:
             pd.DataFrame: dataframe of games played
         """
-
-        # Generate lookups if they haven't been made yet
-        if self.nba_stats is None:
-            self.nba_stats = self.get_nba_stats().groupby("PLAYER_NAME")
         
         if name in self.nba_stats.groups:
             return self.nba_stats.get_group(name)
         
         # Return empty df with the right columns if not there
         else:
-            return self.get_nba_stats().iloc[:0]
+            return self.nba_stats.get_group(list(self.nba_stats.groups)[0]).iloc[:0]
 
 
     def teamID_lookup(self, teamID: str) -> tuple:
@@ -319,13 +364,9 @@ class dbInterface:
             tuple: (manager name, team name)
         """
 
-        # Build the lookup table
-        if self.fantasy_teams is None:
-            self.fantasy_teams = self.get_fantasy_teams()
-            self.fantasy_teams.index = self.fantasy_teams.teamID
-
         return (self.fantasy_teams.at[teamID, 'manager'],
                 self.fantasy_teams.at[teamID, 'teamName'])
+
 
     def games_in_week(self, nba_team: str, week: int,
                       upto: Union[str, datetime.datetime] = "") -> Union[int, tuple[int]]:
@@ -339,11 +380,11 @@ class dbInterface:
             week (int): Yahoo week in the season
             upto (str or datetime): instead return games
                                     before and after the given
-                                    date (upto date is in before)
+                                    date (upto date is in after)
 
         Returns:
             int/tuple: number of games or (n_games before upto,
-                                           n_games after upto)
+                                           n_games after and including upto)
         """
         # Check upto is in the right week
         if isinstance(upto, str):
@@ -352,10 +393,6 @@ class dbInterface:
                     raise(ValueError, "upto not in correct week")
         elif not self.week_for_date(upto) == week:
             raise(ValueError, "upto not in correct week")
-        
-        # Load table
-        if self.games_per_day is None:
-            self.games_per_day = self.get_games_per_day()
 
         start_day_str, end_day_str = self.week_date_range(week)
         start_day = datetime.datetime.strptime(start_day_str,
@@ -373,7 +410,7 @@ class dbInterface:
         counts = [0, 0]
         for date in pd.date_range(start_day, end_day, freq='D'):
             date_str = date.strftime(utils.DATE_SCHEMA)
-            if date <= upto_dt:
+            if date < upto_dt:
                 counts[0] += self.games_per_day.at[date_str, nba_team]
             else:
                 counts[1] += self.games_per_day.at[date_str, nba_team]
@@ -386,12 +423,13 @@ class dbInterface:
         else:
             return tuple(counts)
 
+
     def matchup_score(self, week: int,
-                      upto: Union[str, datetime.datetime] = "") -> pd.DataFrame:
+                      date: Union[str, datetime.datetime] = "") -> pd.DataFrame:
         """
         Returns the matchup score for a given week,
-        optionally upto (including) a date within that
-        week
+        on the morning of the specified date (if a date is given)
+        i.e., before any games have been played
 
         Args:
             nba_team (str): NBA team 3 letter abbreviation
@@ -404,28 +442,28 @@ class dbInterface:
         Returns:
             pd.DataFrame: matchups for the week with scores
         """
-        # Check upto is in the right week
-        if isinstance(upto, str):
+        # Check date is in the right week
+        if isinstance(date, str):
             # Convert from string to date
-            if upto != "":
-                if not self.week_for_date(upto) == week:
-                    raise(ValueError, "upto not in correct week")
+            if date != "":
+                if not self.week_for_date(date) == week:
+                    raise(ValueError, "date not in correct week")
                 else:
-                    upto = datetime.datetime.strptime(upto,
+                    date = datetime.datetime.strptime(date,
                                                       utils.DATE_SCHEMA)
             else:
-                upto = datetime.datetime.strptime(self.week_date_range(week)[1],
+                date = datetime.datetime.strptime(self.week_date_range(week)[1],
                                                   utils.DATE_SCHEMA)
 
-        elif not self.week_for_date(upto) == week:
-            raise(ValueError, "upto not in correct week")
+        elif not self.week_for_date(date) == week:
+            raise(ValueError, "date not in correct week")
 
         # Get all stats entries from the week where
         # people actually played
         stats = self.get_nba_stats(f"WHERE week = {week}")
 
         # Filter based on date
-        to_keep = [datetime.datetime.strptime(x, utils.DATE_SCHEMA) <= upto
+        to_keep = [datetime.datetime.strptime(x, utils.DATE_SCHEMA) < date
                    for x in stats['GAME_DATE']]
         stats = stats[to_keep]
         stats = stats[stats["selected_position"].isin(utils.ACTIVE_POS)]
@@ -443,11 +481,15 @@ class dbInterface:
             for stat in utils.PERC_STATS:
                 attempts = stat.replace("%", "A")
                 made = stat.replace("%", "M")
-                sched.at[team, stat] = (sched.at[team, made] /
-                                        sched.at[team, attempts])
+                if attempts > 0:
+                    perc = (sched.at[team, made] / sched.at[team, attempts])
+                else:
+                    perc = 0
+                sched.at[team, stat] = perc
+                    
 
         return sched
 
 
 if __name__ == "__main__":
-    db = dbInterface("yahoo_save.sqlite")
+    db = dbInterface("past_season_dbs/yahoo_fantasy_2022_23.sqlite")
