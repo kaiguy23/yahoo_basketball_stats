@@ -6,11 +6,14 @@ from scipy.stats import skellam, poisson, norm
 import pandas as pd
 import copy
 from pathlib import Path
+from ast import literal_eval
 
 import matplotlib
 from matplotlib.patches import Rectangle
 import matplotlib.pyplot as plt
 from itertools import product
+
+plt.switch_backend("Agg")
 
 from yahoo_oauth import OAuth2
 import yahoo_fantasy_api as yfa
@@ -164,59 +167,281 @@ def proj_player_stats(db: dbInterface, name: str,
     proj = {}
     # Reverse it because most recent games are last
     kern = gkern_1sided(stats.shape[0], kern_sig)[::-1]
-    for cat in utils.STATS_COLS:
+    for cat in utils.STATS_COLS + ['NBA_FANTASY_PTS']:
         proj[cat] = np.sum(kern*stats[cat].values)
     
     return proj
         
 
 def proj_all_players(db: dbInterface, date: str = utils.TODAY_STR,
-                     rostered: bool = True,
-                     kern_sig: float = GKERN_SIG) -> pd.DataFrame:
+                     kern_sig: float = GKERN_SIG,
+                     teamIDs: list[str] = []) -> pd.DataFrame:
     """
     Returns a dataframe with projected stats for all rostered
-    or optionally all nba players on the morning of the specified 
-    date (i.e., before any games have been played)
+    players on the morning of the specified 
+    date (i.e., before any games have been played).
+
+    Additionally says how many games they've played and remain to
+    be played over the course of the week in question.
 
     Args:
         db (dbInterface): db Interface object
         date (str, optional): Date in form YYYY-MM-DD.
                               Defaults to utils.TODAY_STR.
-        rostered (bool, optional): True -> return stats for only players rostered in fantasy
-                                   False -> return stats for all players rostered in the NBA
         kern_sig (float, optional): STD of Gaussian kernal. Defaults to GKERN_SIG.
 
     Returns:
         pd.DataFrame: Dataframe with player names, projected stats,
                       and their fantasy status.
     """
+
+    week = db.week_for_date(date)
     rosters = db.fantasy_rosters(date)
+    if teamIDs:
+        rosters = rosters[rosters['teamID'].isin(teamIDs)]
     df = []
+    
+    # Rostered players
     for i, row in rosters.iterrows():
+        # Copy over info
         entry = {}
         entry["name"] = row["name"]
         entry.update(proj_player_stats(db, row["name"], date, kern_sig))
-        to_copy = ["selected_position", "status", "manager", "teamName", "teamID"]
+        to_copy = ["selected_position", "status", "manager", "teamName", "teamID",
+                   "eligible_positions"]
         for col in to_copy:
             entry[col] = row[col]
+
+        # Add games played
+        nba_team = row["nba_team"]
+        games_played = db.games_in_week(nba_team, week, upto=date)
+        entry["nba_team"] = nba_team
+        entry["games_played"] = games_played[0]
+        entry["games_to_come"] = games_played[2]
+
         df.append(entry)
-            
-    if not rostered:
-        for name in db.fantasy_free_agents(date):
-            entry = {}
-            entry["name"] = row["name"]
-            entry.update(proj_player_stats(db, row["name"], date, kern_sig))
-            to_copy = ["selected_position", "status", "manager", "teamName", "teamID"]
-            for col in to_copy:
-                entry[col] = ""
-            df.append(entry)
+
+    df = pd.DataFrame(df)
+    df.set_index(["teamID", "name"], inplace=True, drop=False)
+
+    return df
+
+
+def calc_actual_played(db: dbInterface, teamID: str, start: str, end: str):
+    """
+    Looks back through nba game logs to determine how many games were 
+    played by players for the specified team between the two specified
+    dates (inclusive on both ends)
+
+    Args:
+        db (dbInterface): dbInterface object
+        teamID (str): teamID
+        start (str): start date in YYYY-MM-DD format
+        end (str): end date in YYYY-MM-DD format
+
+    Returns:
+        dict: maps player name to number played
+    """
     
-    return pd.DataFrame(df)
+    sql_filter = f"WHERE teamID LIKE '{teamID}' "
+    sql_filter += f"AND GAME_DATE >= '{start}' "
+    sql_filter += f"AND GAME_DATE <= '{end}' "
+    entries = db.get_nba_stats(sql_filter)
+
+    counts = {}
+    for i, row in entries.iterrows():
+        if row["PLAYER_NAME"] not in counts:
+            counts[row["PLAYER_NAME"]] = 1
+        else:
+            counts[row["PLAYER_NAME"]] += 1
+
+    return counts
 
 
+def adjust_for_actual_played(proj: pd.DataFrame, start: str, end: str):
+    raise NotImplementedError()
+
+
+def calc_multiplier(proj: pd.DataFrame, injured = ["INJ", "NA", "O"]):
+    """
+    Calculates the expected number of games played and
+    adds it on as a column to proj
+
+    Currently just takes the top 10 players on any given day
+    by expected fantasy point output
+
+    Args:
+        proj (pd.DataFrame): projections from proj_all_players
+    """
+    exp_to_play = {}
+    for i in proj.index:
+        exp_to_play[i] = 0
+    for teamID in proj.index.levels[0]:
+        team_roster = proj.loc[teamID]
+        # Ignore players that are injured or on IL
+        team_roster = team_roster[np.logical_not(team_roster["status"].isin(injured))]
+        team_roster = team_roster[["IL" not in x for x in team_roster["selected_position"].values]]
+        remaining_mat = np.vstack(team_roster["games_to_come"].values)
+        for j in range(remaining_mat.shape[1]):
+            subset = team_roster[remaining_mat[:,j].astype(bool)]
+            if subset.shape[0] <= 10:
+                for name in subset["name"].values:
+                    exp_to_play[(teamID, name)] += 1
+            else:
+                subset = subset.sort_values("NBA_FANTASY_PTS", ascending=False)
+                for i in range(10):
+                    exp_to_play[(teamID, subset.iloc[i]["name"])] += 1
+                    
+
+            # assigned = assign_roster_spots(subset)
+            # for name in assigned["ACTIVE"]:
+            #     exp_to_play[(teamID, name)] += 1
+    
+    proj["exp_num_to_play"] = 0
+    for i in exp_to_play:
+        proj.at[i, "exp_num_to_play"] = exp_to_play[i]
+
+    return proj["exp_num_to_play"].values
+
+
+def predict_matchup(db: dbInterface, date: str, team1: str, team2: str, 
+                    proj: pd.DataFrame = None, scores: pd.DataFrame = None,
+                    kern_sig: float = GKERN_SIG):
+    """
+    Predicts the probability of victory for a matchup between the two teamIDs
+    from the perspective of the morning of the specified date
+    (i.e., no games that day have been played)
+
+    Assumes that the exp_num_played column has already been created.
+
+    Args:
+        db (dbInterface): dbInterface object
+        date (str): Date in YYYY-MM-DD format
+        team1 (str): teamID of team1
+        team2 (str): teamID of team2
+        proj (pd.DataFrame, optional): Optionally, provide precomputed projections for speed
+        scores (pd.DataFrame, optional): Optionally, provide precomputed scoreboard for speed
+        actual_played (bool, optional): If reviewing past predictions, can use the 
+                                        actual number of games played by each player,
+                                        instead of the predicted number played.
+        kern_sig (float, optional): STD of Gaussian kernal. Defaults to GKERN_SIG.
+
+    Returns:
+        (overall p1 victory prob, overall p2 victory prob, overall tie),
+        {stat: (p1 victory, p2 victory tie)}
+    """
+    # Get proj if not given
+    if proj is None:
+        proj = proj_all_players(db, date, kern_sig, [team1, team2])
+
+    # Get score
+    if scores is None:
+        week = db.week_for_date(date)
+        scores = db.matchup_score(week, date)
+
+    # Make projection dictionary to feed to prob_victory
+    proj_dict = {}
+    current_scores = {}
+    for col in utils.STATS_COLS:
+        proj_dict[col] = (proj.loc[team1][col].sum(),
+                          proj.loc[team2][col].sum())
+        current_scores[col] = (scores.loc[team1][col],
+                               scores.loc[team2][col])
+    
+    return prob_victory(proj_dict, current_scores)
+
+    
+    
     
 
 
+    return
+
+
+def assign_roster_spots(players: pd.DataFrame,
+                        roster_spots: dict[str:int] = utils.ROSTER_SPOTS) -> dict[str:list[str]]:
+    """
+    Assigns roster spots, giving preference to players with more
+    expected fantasy points in the case of a tie
+
+    Args:
+        players (pd.DataFrame): Dataframe with columns name, eligible_positions,
+                                and appropriate stats. Returned from proj_all_players 
+
+        roster_spots (dict, optional): Dictionary that says how many roster spots
+                                       are avaliable for each position
+
+    Returns:
+        dict: maps position to a list of player names
+    """
+
+    def place_player(roster, eligible_positions):
+        for pos in eligible_positions:
+            if len(roster[pos]) < roster_spots[pos]:
+                return pos
+        return "BN"
+
+
+    # Calculate fantasy points for deciding who plays
+    # it's not there yet
+    if "NBA_FANTASY_PTS" not in players.columns:
+        players['NBA_FANTASY_PTS'] = utils.calc_fantasy_points(players)
+    players = players.sort_values(by="NBA_FANTASY_PTS", ascending=False)
+    
+    # Assign roster spots by placing a player in their preferred
+    # position first (in order by eligible_positions).
+    #
+    # If that position is already full, then the spot goes to the
+    # player with the higher expected fantasy points and the 
+    # other player is reassigned down the list.
+    #
+    # In the case of a player being placed on the bench, you go back around
+    # and see if any other players that were given preference could be moved.
+    #
+    # This ends with the lowest fantasy point players being benched
+    # in case of too many people
+    #
+    roster = {}
+    for pos in roster_spots:
+        roster[pos] = []
+    roster["BN"] = []
+    roster["ACTIVE"] = []
+    elig_pos = {}
+    # Interpret list and remove IL
+    for i, row in players.iterrows():
+        elig_pos[row["name"]] = [x for x in literal_eval(row["eligible_positions"]) if "IL" not in x]
+
+    # Try to place each player
+    for i in range(players.shape[0]):
+        placed = False
+        row = players.iloc[i]
+        placement = place_player(roster, elig_pos[row["name"]])
+        if placement != "BN":
+            placed = True
+            roster[placement].append(row["name"])
+        else:
+        # If would be place on bench,
+        # Check to see if another player can be moved to keep
+        # everyone active
+            for pos in elig_pos[row["name"]]:
+                for name2 in roster[pos]:
+                    replacement = place_player(roster, elig_pos[name2])
+                    if replacement != "BN":
+                        roster[pos].remove(name2)
+                        roster[pos].append(row["name"])
+                        roster[replacement].append(name2)
+                        placed = True
+                        break
+                if placed:
+                    break
+
+
+        if placed:
+            roster["ACTIVE"].append(row["name"])
+        if not placed:
+            roster["BN"].append(row["name"])
+    
+    return roster
 
 
 def prob_victory(proj: dict[str, tuple[float]],
@@ -226,7 +451,7 @@ def prob_victory(proj: dict[str, tuple[float]],
                                                             "TO": (0, 0), "FGA": (0, 0),
                                                             "FGM": (0, 0), "FTA": (0, 0),
                                                             "FTM": (0, 0)}) -> (np.array,
-                                                                                dict[str, tuple[float]]):
+                                                                                dict[str:tuple[float]]):
     """
     Returns the probability of victory in each category and overall
     between the two players
@@ -245,17 +470,12 @@ def prob_victory(proj: dict[str, tuple[float]],
 
     stat_victory = {}
 
-    if not matchup_df is None:
-        grouped = matchup_df.groupby("manager")
-
     # Go through simple counting stats
     for stat in simple_stats:
-        if curr is None:
-            current_score = (0,0)
-        else:
-            current_score = (grouped.get_group(p1)[stat].iloc[0], grouped.get_group(p2)[stat].iloc[0])
-        stat_victory[stat] = skellam_prob(proj[p1][stat], proj[p2][stat], current_score=current_score)
-        if stat == "TOV":
+        current_score = current_scores[stat]
+        stat_victory[stat] = skellam_prob(proj[stat][0], proj[stat][1], current_score=current_score)
+        # Reverse for TO
+        if stat == "TO":
             w1 = stat_victory[stat][1]
             w2 = stat_victory[stat][0]
             stat_victory[stat] = (w1, w2, stat_victory[stat][2])
@@ -263,18 +483,16 @@ def prob_victory(proj: dict[str, tuple[float]],
     # Go through percentage stats
     percent_std = {}
     for stat in percent_stats:
-        attempts = (proj[p1][percent_stats[stat][0]], proj[p2][percent_stats[stat][0]])
-        made = (proj[p1][percent_stats[stat][1]], proj[p2][percent_stats[stat][1]])
-
-        if matchup_df is None:
-            current_score = ((0,0),(0,0))
-        else:
-            current_score = ((grouped.get_group(p1)[percent_stats[stat][0]].iloc[0], grouped.get_group(p2)[percent_stats[stat][0]].iloc[0]),
-                            (grouped.get_group(p1)[percent_stats[stat][1]].iloc[0], grouped.get_group(p2)[percent_stats[stat][1]].iloc[0]))
-        stat_victory[stat], moment1, moment2 = ratio_prob(attempts, made, current_score=current_score)
-        percent_std[stat] = {}
-        percent_std[stat][p1] = moment1
-        percent_std[stat][p2] = moment2
+        attempts = proj[percent_stats[stat][0]]
+        made = proj[percent_stats[stat][1]]
+        current_score = (current_scores[percent_stats[stat][0]],
+                         current_scores[percent_stats[stat][1]])
+                         
+        stat_victory[stat], moment1, moment2 = ratio_prob(attempts, made,
+                                                          current_score=current_score)
+        percent_std[stat] = [0, 0]
+        percent_std[stat][0] = moment1
+        percent_std[stat][1] = moment2
 
 
     # Loop through all 19,683 possible stat winning combinations/ties
@@ -389,8 +607,96 @@ if __name__ == "__main__":
 
     
     db = dbInterface("past_season_dbs/yahoo_fantasy_2022_23.sqlite")
-    date = "2023-03-23"
+    # date = "2023-01-30"
+    # date2 = "2023-02-05"
+    date = "2023-03-20"
+    # date2 = "2023-02-05"
+
+    week = db.week_for_date(date)
+    scores = db.matchup_score(week, date)
+    import time
+    t0 = time.time()
+    # db.player_stats("Paul George")
     proj = proj_all_players(db, date)
+    calc_multiplier(proj)
+    t1 = time.time()
+    # db.get_nba_stats("WHERE PLAYER_NAME LIKE 'Paul George'")
+    # entries = calc_actual_played(db, "418.l.20454.t.4", date, date2)
+
+    res = predict_matchup(db, date, "418.l.20454.t.8", "418.l.20454.t.4", proj, scores)
+
+    t2 = time.time()
+
+    
+    print(t1-t0)
+
+    print(t2-t1)
+
+    res = {"Overall":[]}
+    week = 17
+    # week = 22
+    # team1, team2 = "418.l.20454.t.8", "418.l.20454.t.10"
+    # team1, team2 = "418.l.20454.t.8", "418.l.20454.t.4"
+    team1, team2 = "418.l.20454.t.8", "418.l.20454.t.7"
+    date_range = utils.date_range(db.week_date_range(week)[0], db.week_date_range(week)[1])
+    for date in date_range:
+        #  res.append(predict_matchup(db, date, "418.l.20454.t.8", "418.l.20454.t.4")[0])
+        preds = predict_matchup(db, date, team1, team2)
+        res["Overall"].append(preds[0])
+        for stat in preds[1]:
+            if stat not in res:
+                res[stat] = []
+            res[stat].append(preds[1][stat])
+    
+    final_scoreboard = db.matchup_score(week)
+    for stat in res:
+        res[stat] = np.vstack(res[stat])
+        if stat == "Overall":
+            winners = utils.matchup_winner(final_scoreboard.loc[team1], final_scoreboard.loc[team2])
+        else:
+            winners = [final_scoreboard.loc[team1][stat], final_scoreboard.loc[team2][stat]]
+        if stat != "TO":
+            if winners[0] > winners[1]:
+                res[stat] = np.vstack((res[stat], np.array([1,0,0])))
+            elif winners[0] < winners[1]:
+                res[stat] = np.vstack((res[stat], np.array([0,1,0])))
+            else:
+                res[stat] = np.vstack((res[stat], np.array([0,0,1])))
+        else:
+            if winners[0] > winners[1]:
+                res[stat] = np.vstack((res[stat], np.array([0,1,0])))
+            elif winners[0] < winners[1]:
+                res[stat] = np.vstack((res[stat], np.array([1,0,0])))
+            else:
+                res[stat] = np.vstack((res[stat], np.array([0,0,1])))
+    
+    
+    xlabels = date_range + ["Final"]
+    fig, axd = plt.subplot_mosaic([["Overall", "Overall", "Overall"],
+                                   ["FG%", "FT%", "3PTM"],
+                                   ["PTS", "REB", "AST"],
+                                   ["ST", "BLK", "TO"]],
+                              figsize=(9, 12), layout="constrained")
+    
+    fig.suptitle(f"Predicted Results from Morning of Specified Day (Week {week})")
+    for stat in res:
+        # for k in axd:
+        #     annotate_axes(axd[k], f'axd["{k}"]', fontsize=14)
+        ax = axd[stat]
+        ax.plot(res[stat][:,0], label=db.teamID_lookup(team1)[0], marker=".", lw=1)
+        ax.plot(res[stat][:,1], label=db.teamID_lookup(team2)[0], marker=".", lw=1)
+        ax.plot(res[stat][:,2], label="Tie", marker=".", lw=1)
+        ax.set_title(stat)
+        ax.grid()
+        if stat == "Overall":
+            ax.set_ylabel("Probability")
+            ax.set_xlabel("Date")
+            ax.legend()
+            ax.set_xticks(ticks=np.arange(len(xlabels)), labels=xlabels)
+        else:
+            ax.set_xticks(ticks=np.arange(len(xlabels)), labels=[""]*len(xlabels))
+    # plt.tight_layout()
+    plt.savefig("test.png")
 
 
     # sc, gm, curLg = refresh_oauth_file(oauthFile = 'yahoo_oauth.json')

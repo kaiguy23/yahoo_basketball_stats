@@ -21,12 +21,28 @@ def test_find_closest_date():
     assert utils.find_closest_date("2022-11-29", dates) == 1
     assert utils.find_closest_date("2022-11-30", dates) == 2
     assert utils.find_closest_date("2022-12-01", dates) == 2
-    assert utils.find_closest_date("2022-12-02", dates) == 2
+    assert utils.find_closest_date("2022-12-02", dates) in [2, 3]
     assert utils.find_closest_date("2022-12-03", dates) == 3
     assert utils.find_closest_date("2022-12-04", dates) == 3
     assert utils.find_closest_date("2022-12-05", dates) == 3
     assert utils.find_closest_date("2023-12-05", dates) == 4
 
+
+def test_find_closest_date_fast():
+    dates = ["2022-11-28", "2022-11-29",
+             "2022-11-30", "2022-12-04",
+             "2023-03-21"]
+    
+    assert utils.find_closest_date_fast("2022-11-27", dates) == 0
+    assert utils.find_closest_date_fast("2022-11-28", dates) == 0
+    assert utils.find_closest_date_fast("2022-11-29", dates) == 1
+    assert utils.find_closest_date_fast("2022-11-30", dates) == 2
+    assert utils.find_closest_date_fast("2022-12-01", dates) == 2
+    assert utils.find_closest_date_fast("2022-12-02", dates) in [2, 3]
+    assert utils.find_closest_date_fast("2022-12-03", dates) == 3
+    assert utils.find_closest_date_fast("2022-12-04", dates) == 3
+    assert utils.find_closest_date_fast("2022-12-05", dates) == 3
+    assert utils.find_closest_date_fast("2023-12-05", dates) == 4
 
 def test_yahoo_to_nba_name():
 
@@ -35,3 +51,6 @@ def test_yahoo_to_nba_name():
     assert utils.yahoo_to_nba_name("Yi Sheng Ong",
                                    {"Yi Sheng Ong": "Asian Jordan"}) == "Asian Jordan"
 
+
+if __name__ == "__main__":
+    test_find_closest_date()

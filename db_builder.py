@@ -404,6 +404,9 @@ class dbBuilder:
 
                 # Some dates don't have NBA games
                 if date_str not in nba_by_day.indices:
+                    for team in all_teams:
+                        n_games[team] = 0
+                    all_days.append(n_games)
                     continue
 
                 games = nba_by_day.get_group(date_str)
@@ -591,11 +594,40 @@ class dbBuilder:
             # Save results from each day in case we go over the query limit
             all_rosters = pd.concat(all_rosters)
             all_rosters['eligible_positions'] = [str(x) for x in all_rosters['eligible_positions'].values]
-            all_rosters.to_sql(table_name, self.con, if_exists="append",index=False)
+            all_rosters.to_sql(table_name, self.con, if_exists="append", index=False)
             self.con.commit()
 
         return
+    
+    def add_nba_team_info_to_fantasy_rosters(self):
+        """
+        NOTE: Must be run after update_nba_rosters and update_fantasy_rosters
+
+        Adds a column with nba_team information to the fantasy
+        rosters table
+        """
+
+        # Start and end days to get stats for
+        db_reader = dbInterface(self.db_file)
+        fantasy_rosters = db_reader.get_fantasy_rosters()
+
+        # Add the nba team column if it's not there
+        if "nba_team" not in fantasy_rosters.columns:
+            fantasy_rosters["nba_team"] = ""
         
+        # Add missing information
+        nba_teams = fantasy_rosters["nba_team"].values
+        for i, row in fantasy_rosters.iterrows():
+            if nba_teams[i] == "":
+                nba_teams[i] = db_reader.player_affiliation(row["name"], row["date"])[1]
+        
+        fantasy_rosters["nba_team"] = nba_teams
+
+        table_name = f"FANTASY_ROSTERS_{self.season}"
+        fantasy_rosters.to_sql(table_name, self.con, if_exists="replace", index=False)
+        self.con.commit()
+
+
     def update_db(self):
         """
         Updates the database in the correct order
@@ -607,6 +639,7 @@ class dbBuilder:
         self.update_nba_schedule()
         self.update_num_games_per_day()
         self.update_nba_rosters()
+        self.add_nba_team_info_to_fantasy_rosters()
 
 
 if __name__ == "__main__":
@@ -614,9 +647,10 @@ if __name__ == "__main__":
     f = "past_season_dbs/yahoo_fantasy_2022_23.sqlite"
 
     builder = dbBuilder(f, debug=True)
+    # builder.delete_table("GAMES_PER_DAY_2022_23")
+    builder.update_num_games_per_day()
 
-    builder.delete_table("NBA_STATS_2022_23")
-    builder.update_nba_stats()
+    # builder.add_nba_team_info_to_fantasy_rosters()
 
     con = sqlite3.connect(f)
     cur = con.cursor()

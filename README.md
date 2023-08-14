@@ -64,3 +64,7 @@ Free throw and fg percentage is more difficult, as it's the ratio of two non-ind
 ### Notes on Database:
 
 NBA and Yahoo sometimes have different names for players with abbreviations, like O.G. Aununoby vs. OG Anunoby. By default I have the "name" (info from yahoo_api) or "PLAYER_NAME" (info from nba api) set to be the NBA api name. In the fantasy rosters table I kept the yahoo names in another column titled "yahoo_name"
+
+### Possible Improvements:
+
+- Acurrately assigning rosters for future days. Currently takes the 10 highest by fantasy points, even if their positions would be incompatible.

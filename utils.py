@@ -51,6 +51,9 @@ NBA_TEAMS = ['ATL','BKN','BOS','CHA','CHI','CLE',
              'POR','SAC','SAS','TOR','UTA','WAS']
 NBA_TEAMS_SET = set(NBA_TEAMS)
 
+ROSTER_SPOTS = {"PG": 1, "SG": 1, "G": 1, "SF": 1,
+                "PF": 1, "F": 1, "C": 2, "Util": 2}
+
 
 SPECIAL_NAMES = {}
 def yahoo_to_nba_name(name: str, hardcoded: dict = SPECIAL_NAMES) -> str:
@@ -99,6 +102,99 @@ def yahoo_to_nba_name(name: str, hardcoded: dict = SPECIAL_NAMES) -> str:
                 raise ValueError(f"Player {name} not found")
 
 
+# In practice a little bit ~10 % faster for our use case,
+# but probably not worth the extra complexity
+def find_closest_date_fast(d: Union[str, datetime.datetime],
+                      dates: list[str]) -> int:
+    """
+    NOTE: dates must be sorted already, with most
+    recent dates at the end of the list
+
+    Finds the index of the closest date in
+    dates to the date d. Assumes dates is sorted
+    already with most recent dates at the end of the 
+    list.
+    
+    If d/dates
+    are strings, assumes they are in the default
+    date format.
+
+    In the case of a tie, the winner is not deterministically
+    chosen.
+
+    Args:
+        d (str or datetime): date to find the closest entry to
+        dates (list of str or datetime): list of dates to compare to
+    
+    Returns:
+        int: index of the closest date in dates to the input d
+    """
+    if isinstance(d, str):
+        d_str = d
+        d = datetime.datetime.strptime(d, DATE_SCHEMA)
+    else:
+        d_str = d.strftime(DATE_SCHEMA)
+    
+    # edge case - last or above all
+    last_date = dates[-1]
+    if not isinstance(last_date, str):
+        last_date = dates[-1].strftime(DATE_SCHEMA)
+    if d_str >= last_date:
+        return len(dates) - 1
+    # edge case - first or below all
+    first_date = dates[0]
+    if not isinstance(first_date, str):
+        first_date = first_date.strftime(DATE_SCHEMA)
+    if d_str <= first_date:
+        return 0
+    
+    # Perform binary search to find closest entry
+    low = 0
+    high = len(dates) - 1
+    best_diff = np.inf
+    best_i = None
+
+    while low < high:
+        
+        # Check the midpoint
+        mid = low + int((high - low)/2)
+        d2_str = dates[mid]
+        if not isinstance(d2_str, str):
+            d2_str = d2_str.strftime(DATE_SCHEMA)
+
+        # We're over if we've found what we're looking for
+        if d_str == d2_str:
+            return mid
+        
+        # Continue with the binary search
+        elif d_str > d2_str:
+            low = mid + 1 
+        else:
+            high = mid - 1
+
+    # Return the closest if no exact match was found
+    d2 = datetime.datetime.strptime(d2_str, DATE_SCHEMA)
+    diff2 = (d - d2).days
+    if diff2 < 0:
+        d3 = dates[mid - 1]
+        if isinstance(d3, str):
+            d3 = datetime.datetime.strptime(d3, DATE_SCHEMA)
+        diff3 = (d - d3).days
+        if abs(diff2) < abs(diff3):
+            return mid
+        else:
+            return mid - 1
+    else:
+        d3 = dates[mid + 1]
+        if isinstance(d3, str):
+            d3 = datetime.datetime.strptime(d3, DATE_SCHEMA)
+        diff3 = (d - d3).days
+        if abs(diff2) < abs(diff3):
+            return mid
+        else:
+            return mid + 1
+        
+
 def find_closest_date(d: Union[str, datetime.datetime],
                       dates: list) -> int:
     """
@@ -132,6 +228,26 @@ def find_closest_date(d: Union[str, datetime.datetime],
             closest_i = i
 
     return closest_i
+
+
+def binarySearch(array, x, low, high):
+
+    # Repeat until the pointers low and high meet each other
+    while low <= high:
+
+        mid = low + (high - low)//2
+
+        if array[mid] == x:
+            return mid
+
+        elif array[mid] < x:
+            low = mid + 1
+
+        else:
+            high = mid - 1
+
+    return -1
+
 
 
 def get_team_ids(sc: OAuth2, league: yfa.league.League) -> pd.DataFrame:
@@ -321,3 +437,33 @@ def extract_matchup_scores(league: yfa.league.League,
         df['STL'] = df['ST']
 
     return df
+
+def date_range(date1: str, date2: str):
+    dates = []
+    start_day = datetime.datetime.strptime(date1, DATE_SCHEMA)
+    end_day = datetime.datetime.strptime(date2, DATE_SCHEMA)
+    for date in pd.date_range(start_day, end_day, freq='D'):
+        dates.append(date.strftime(DATE_SCHEMA))
+    return dates
+
+
+def matchup_winner(stats1, stats2):
+    
+    counts = [0, 0, 0]
+    for stat in ["3PTM", "PTS", "REB", 
+                 "AST", "ST", "BLK",
+                 "TO", "FG%", "FT%"]:
+        if stats1[stat] > stats2[stat]:
+            counts[0] += 1
+        elif stats1[stat] < stats2[stat]:
+            counts[1] += 1
+        else:
+            counts[2] += 1
+
+    return counts
+
+
+def calc_fantasy_points(stats):
+    return (stats["PTS"] + 1.2*stats["REB"] + 1.5*stats["AST"] + 
+            3.0*stats["BLK"] + 3.0*stats["ST"] + -1*stats["TO"])
+

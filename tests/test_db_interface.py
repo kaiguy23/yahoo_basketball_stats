@@ -76,6 +76,7 @@ def test_player_affiliation():
     
     assert db.player_affiliation("O.G. Anunoby", "2023-03-05") == ("418.l.20454.t.4",
                                                                      "TOR")
+    assert db.player_affiliation("Miles Bridges", "2023-03-05") == ("", "N/A")
 
 
 def test_player_stats():
@@ -102,21 +103,24 @@ def test_teamID_lookup():
     assert db.teamID_lookup("418.l.20454.t.8") == ("Eli", "Hartless 💔")
 
 
+def test_manager_to_teamID():
+
+    assert db.teamID_lookup("Eli") == "418.l.20454.t.8"
+
+
 def test_games_in_week():
 
     assert db.games_in_week("DET", 14) == 1
     assert db.games_in_week("BKN", 1) == 2
     assert db.games_in_week("NOP", 20) == 4
-
-    
     
     assert db.games_in_week("DET", 7, "2022-11-28") == (0, 3)
 
-    assert db.games_in_week("ATL", 7, "2022-11-28") == (1, 2)
+    assert db.games_in_week("ATL", 7, "2022-11-28") == (0, 3)
     assert db.games_in_week("ATL", 7, "2022-11-29") == (1, 2)
-    assert db.games_in_week("ATL", 7, "2022-11-30") == (2, 1)
+    assert db.games_in_week("ATL", 7, "2022-11-30") == (1, 2)
     assert db.games_in_week("ATL", 7, "2022-12-01") == (2, 1)
-    assert db.games_in_week("ATL", 7, "2022-12-02") == (3, 0)
+    assert db.games_in_week("ATL", 7, "2022-12-02") == (2, 1)
     assert db.games_in_week("ATL", 7, "2022-12-03") == (3, 0)
     assert db.games_in_week("ATL", 7, "2022-12-04") == (3, 0)
 
@@ -139,7 +143,7 @@ def test_matchup_score():
     assert scores["BLK"] == 34
     assert scores["TO"] == 97
 
-    scores = db.matchup_score(17, "2023-02-06")
+    scores = db.matchup_score(17, "2023-02-07")
     scores = scores[scores.manager.isin(["Gary"])].iloc[0]
     assert abs(scores["FG%"] - 0.522) < 0.001
     assert abs(scores["FT%"] - 0.913) < 0.001
@@ -150,3 +154,15 @@ def test_matchup_score():
     assert scores["ST"] == 8
     assert scores["BLK"] == 2
     assert scores["TO"] == 15
+
+    scores = db.matchup_score(16, "2023-01-30")
+    scores = scores[scores.manager.isin(["Gary"])].iloc[0]
+    assert scores["FG%"] == 0
+    assert scores["FT%"] == 0
+    assert scores["3PTM"] == 0
+    assert scores["PTS"] == 0
+    assert scores["REB"] == 0
+    assert scores["AST"] == 0
+    assert scores["ST"] == 0
+    assert scores["BLK"] == 0
+    assert scores["TO"] == 0
