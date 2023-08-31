@@ -509,8 +509,8 @@ class dbInterface:
         if isinstance(date, str):
             # Convert from string to date
             if date != "":
-                if not self.week_for_date(date) == week:
-                    raise(ValueError, "date not in correct week")
+                if self.week_for_date(date) != week:
+                    raise(Exception(f"date {date} not in correct week ({week})"))
                 else:
                     date = datetime.datetime.strptime(date,
                                                       utils.DATE_SCHEMA)
@@ -525,13 +525,35 @@ class dbInterface:
 
         # Get fantasy schedule for the week
         sched = self.get_fantasy_schedule(f"WHERE week LIKE {week}")
-        sched.index = sched.teamID
 
+        # Add any players not there -- for playoff weeks
+        team_df = self.get_fantasy_teams()
+        if sched.shape[0] != team_df.shape[0]:
+            for i, row in team_df.iterrows():
+                team = row["teamID"]
+                if team not in sched.teamID.values:
+                    new_row = {"teamID": team}
+                    for col in sched.columns:
+                        if col in team_df:
+                            new_row[col] = row[col]
+                        elif col == "matchupNumber":
+                            new_row[col] = np.nan
+                        else:
+                            new_row[col] = sched.iloc[0][col]
+                    pd.concat([sched, pd.Series(new_row)], ignore_index=True)
+        
+        # Set index
+        sched.index = sched.teamID
 
         for team in sched.teamID:
             sql_query = f"WHERE week LIKE {week} AND teamID LIKE '{team}' "
-            sql_query += f"AND GAME_DATE < '{date.strftime(utils.DATE_SCHEMA)}'"
-            team_stats = stats = self.get_nba_stats(sql_query)
+            sql_query += f"AND GAME_DATE <= '{date.strftime(utils.DATE_SCHEMA)}'"
+            team_stats = self.get_nba_stats(sql_query)
+            # Filter out people who were on IL
+            if team_stats.empty:
+                continue
+            team_stats = team_stats[["IL" not in x and "BN" != x
+                                     for x in team_stats["selected_position"].values]]
             for stat in utils.STATS_COLS:
                 sched.at[team, stat] = team_stats[stat].sum()
             for stat in utils.PERC_STATS:

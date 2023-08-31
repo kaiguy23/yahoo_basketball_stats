@@ -1,50 +1,112 @@
+import numpy as np
+import pandas as pd
+import seaborn as sn
+
+import matplotlib
+import matplotlib.pyplot as plt
+from matplotlib.patches import Rectangle
+
+import pred
 
 
+def plot_matchup_history():
 
-def plot_matchup_matrix(proj, num_games = 3, savename="ideal.png", matchup_df = None, week=""):
+    res = {"Overall":[]}
+    # week = 17
+    # team1, team2 = "418.l.20454.t.8", "418.l.20454.t.7"
+    # week = 22
+    # team1, team2 = "418.l.20454.t.8", "418.l.20454.t.4"
+    # week = 11
+    # team1, team2 = "418.l.20454.t.8", "418.l.20454.t.10"
+    # week = 20
+    # team1, team2 = "418.l.20454.t.8", "418.l.20454.t.2"
+    week = 21
+    team1, team2 = "418.l.20454.t.8", "418.l.20454.t.11"
+    date_range = utils.date_range(db.week_date_range(week)[0], db.week_date_range(week)[1])
+    for date in date_range:
+        #  res.append(predict_matchup(db, date, "418.l.20454.t.8", "418.l.20454.t.4")[0])
+        preds = predict_matchup(db, date, team1, team2)
+        res["Overall"].append(preds[0])
+        for stat in preds[1]:
+            if stat not in res:
+                res[stat] = []
+            res[stat].append(preds[1][stat])
+    
+    final_scoreboard = db.matchup_score(week)
+    for stat in res:
+        res[stat] = np.vstack(res[stat])
+        if stat == "Overall":
+            winners = utils.matchup_winner(final_scoreboard.loc[team1], final_scoreboard.loc[team2])
+        else:
+            winners = [final_scoreboard.loc[team1][stat], final_scoreboard.loc[team2][stat]]
+        if stat != "TO":
+            if winners[0] > winners[1]:
+                res[stat] = np.vstack((res[stat], np.array([1,0,0])))
+            elif winners[0] < winners[1]:
+                res[stat] = np.vstack((res[stat], np.array([0,1,0])))
+            else:
+                res[stat] = np.vstack((res[stat], np.array([0,0,1])))
+        else:
+            if winners[0] > winners[1]:
+                res[stat] = np.vstack((res[stat], np.array([0,1,0])))
+            elif winners[0] < winners[1]:
+                res[stat] = np.vstack((res[stat], np.array([1,0,0])))
+            else:
+                res[stat] = np.vstack((res[stat], np.array([0,0,1])))
+    
+    
+    xlabels = date_range + ["Final"]
+    fig, axd = plt.subplot_mosaic([["Overall", "Overall", "Overall"],
+                                   ["FG%", "FT%", "3PTM"],
+                                   ["PTS", "REB", "AST"],
+                                   ["ST", "BLK", "TO"]],
+                              figsize=(9, 12), layout="constrained")
+    
+    fig.suptitle(f"Predicted Results from Morning of Specified Day (Week {week})")
+    for stat in res:
+        # for k in axd:
+        #     annotate_axes(axd[k], f'axd["{k}"]', fontsize=14)
+        ax = axd[stat]
+        ax.plot(res[stat][:,0], label=db.teamID_lookup(team1)[0], marker=".", lw=1)
+        ax.plot(res[stat][:,1], label=db.teamID_lookup(team2)[0], marker=".", lw=1)
+        ax.plot(res[stat][:,2], label="Tie", marker=".", lw=1)
+        ax.set_title(stat)
+        ax.grid()
+        if stat == "Overall":
+            ax.set_ylabel("Probability")
+            ax.set_xlabel("Date")
+            ax.legend()
+            ax.set_xticks(ticks=np.arange(len(xlabels)), labels=xlabels)
+        else:
+            ax.set_xticks(ticks=np.arange(len(xlabels)), labels=[""]*len(xlabels))
+    # plt.tight_layout()
+    plt.savefig("test.png")
+
+
+def plot_matchup_matrix(pred_mat: np.array, order: list[str],
+                        matchup_df: pd.DataFrame = None,
+                        savename: str = "pred_mat.png"):
     """
     Generates a matrix of predicted outcomes if every player played every other player
 
     Args:
-        proj (dict): dictionary of manager name to projected stat values
-        num_games (int, optional): _description_. Defaults to 3.
-        savename (str, optional): _description_. Defaults to "ideal.png".
-        matchup_df (pd dataframe, optional): 
+        pred_mat (np.array): array of probabilities of victory
+        order (str): list of manager names
+        matchup_df (pd.Dataframe): matchups for the week from db.matchup
+        savename (str): file to save the figure to
+
 
     Returns:
-        _type_: _description_
+        None
     """
 
-    if matchup_df is None:
-        managers = list(proj.keys())
-    else:
-        managers = matchup_df['manager'].values
-
-    probMat = np.zeros((len(managers), len(managers)))
-    for i1, m1 in enumerate(managers):
-        for i2, m2 in enumerate(managers):
-            if i2 > i1:
-                p, s, m = prob_victory(proj, m1, m2, matchup_df=matchup_df)
-                probMat[i1, i2] = p[0]
-                probMat[i2, i1] = p[1]
-            elif i2 == i1:
-                probMat[i1, i2] = np.nan
-
-
-    
-
-    # create labels for the axes
-    if matchup_df is None:
-        yAxisLabels = managers
-    else:
-        yAxisLabels = matchup_df[['manager', 'teamName']].apply(lambda x: x[0] + '\n' + x[1],axis=1)
-
-    xAxisLabels = managers
+    yAxisLabels = order
+    xAxisLabels = order
 
     # do plotting
     sn.set(font_scale=1.2)
     f, ax = plt.subplots(figsize=(20,10))
-    ax = sn.heatmap(probMat, annot=np.round(probMat*100)/100, fmt='', xticklabels = xAxisLabels,
+    ax = sn.heatmap(pred_mat, annot=np.round(pred_mat*100)/100, fmt='', xticklabels = xAxisLabels,
             yticklabels = yAxisLabels, cmap='RdYlGn',cbar=False)
 
     # highlight actual matchup
@@ -56,19 +118,15 @@ def plot_matchup_matrix(proj, num_games = 3, savename="ideal.png", matchup_df = 
             ax.add_patch(Rectangle((i,j), 1, 1, fill=False, edgecolor='blue', lw=3))
             ax.add_patch(Rectangle((j,i), 1, 1, fill=False, edgecolor='blue', lw=3))
 
-    if num_games is None:
-        if week == "":
+    if matchup_df is None:
             f.suptitle(f"NBA Fantasy Predicted Results", fontsize = 30)
-        else:
-            f.suptitle(f"NBA Fantasy Predicted Results (Week {week})", fontsize = 30)
     else:
-        f.suptitle(f"NBA Fantasy Ideal Matchups (All Players Play {num_games} Games, Ignore Injuries, Don't Count Players on IL)", fontsize = 30)
-
+        f.suptitle(f"NBA Fantasy Predicted Results (Week {matchup_df.iloc[0].week})", fontsize = 30)
+   
     if savename != "":
         plt.savefig(savename)
         plt.close(f)
 
-    return probMat
 
 def plot_matchup_summary(proj, p1, p2, matchup_df = None, savename=None):
     """

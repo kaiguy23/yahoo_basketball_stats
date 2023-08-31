@@ -8,9 +8,6 @@ import copy
 from pathlib import Path
 from ast import literal_eval
 
-import matplotlib
-from matplotlib.patches import Rectangle
-import matplotlib.pyplot as plt
 from itertools import product
 
 plt.switch_backend("Agg")
@@ -18,7 +15,6 @@ plt.switch_backend("Agg")
 from yahoo_oauth import OAuth2
 import yahoo_fantasy_api as yfa
 
-import seaborn as sn
 
 from db_interface import dbInterface
 import utils
@@ -138,7 +134,7 @@ def ratio_prob(attempts: tuple[int], made: tuple[int],
     tie = np.sum(comp == 0)/samples
     w2 = np.sum(comp < 0)/samples
     
-    return (w1, w2, tie), (np.mean(r1), np.std(r1)), (np.mean(r2), np.std(r2))
+    return (w1, w2, tie)
 
 
 def proj_player_stats(db: dbInterface, name: str,
@@ -155,6 +151,9 @@ def proj_player_stats(db: dbInterface, name: str,
         date (str, optional): Date in form YYYY-MM-DD.
                               Defaults to utils.TODAY_STR.
         kern_sig (float, optional): STD of Gaussian kernel. Defaults to GKERN_SIG.
+        actual_layed (bool, optional): If reviewing past predictions, adjust the games
+                                       played estimate to reflect the actual number of games
+                                       played for each player.
 
     Returns:
         dict[float]: Maps statistic to projected value
@@ -172,10 +171,11 @@ def proj_player_stats(db: dbInterface, name: str,
     
     return proj
         
-
+## TODO: Add in the calc multiplier info
 def proj_all_players(db: dbInterface, date: str = utils.TODAY_STR,
                      kern_sig: float = GKERN_SIG,
-                     teamIDs: list[str] = []) -> pd.DataFrame:
+                     teamIDs: list[str] = [],
+                     actual_played: bool = False) -> pd.DataFrame:
     """
     Returns a dataframe with projected stats for all rostered
     players on the morning of the specified 
@@ -214,17 +214,27 @@ def proj_all_players(db: dbInterface, date: str = utils.TODAY_STR,
 
         # Add games played
         nba_team = row["nba_team"]
-        games_played = db.games_in_week(nba_team, week, upto=date)
-        entry["nba_team"] = nba_team
-        entry["games_played"] = games_played[0]
-        entry["games_to_come"] = games_played[2]
+        if nba_team != "N/A":
+            games_played = db.games_in_week(nba_team, week, upto=date)
+            entry["games_played"] = games_played[0]
+            entry["games_to_come"] = games_played[2]
+        else:
+            entry["games_played"] = 0
+            entry["games_to_come"] = 0
 
+        entry["nba_team"] = nba_team
+        
         df.append(entry)
 
     df = pd.DataFrame(df)
     df.set_index(["teamID", "name"], inplace=True, drop=False)
 
-    return df
+    if actual_played:
+        final_date = db.week_date_range(db.week_for_date(date))[1]
+        return adjust_for_actual_played(db, df, date, final_date, kern_sig)
+    else:
+        calc_multiplier(df)
+        return df
 
 
 def calc_actual_played(db: dbInterface, teamID: str, start: str, end: str):
@@ -258,8 +268,33 @@ def calc_actual_played(db: dbInterface, teamID: str, start: str, end: str):
     return counts
 
 
-def adjust_for_actual_played(proj: pd.DataFrame, start: str, end: str):
-    raise NotImplementedError()
+def adjust_for_actual_played(db: dbInterface, proj: pd.DataFrame,
+                             start: str, end: str,
+                             kern_sig: float = GKERN_SIG):
+
+    for team in proj["teamID"].unique():
+        counts = calc_actual_played(db, team, start, end)
+        for player in counts:
+            if (team, player) in proj.index:
+                proj.at[(team, player), "exp_num_to_play"] = counts[player]
+            else:
+                new_entry = proj_player_stats(db, player, start, kern_sig)
+                new_entry["name"] = player
+                new_entry["teamID"] = team
+                new_entry["exp_num_to_play"] = counts[player]
+                new_entry["games_played"] = 0
+                new_entry = pd.DataFrame([new_entry])
+                new_entry.set_index(["teamID", "name"], inplace=True, drop=False)
+                proj = pd.concat([proj, new_entry])
+        
+        # Go through and remove games played if the actual was 0 and
+        # wouldn't show up in counts
+        for player in proj.loc[team].name.values:
+            if player not in counts:
+                proj.at[(team, player), "exp_num_to_play"] = 0
+
+    return proj
+
 
 
 def calc_multiplier(proj: pd.DataFrame, injured = ["INJ", "NA", "O"]):
@@ -306,7 +341,7 @@ def calc_multiplier(proj: pd.DataFrame, injured = ["INJ", "NA", "O"]):
 
 def predict_matchup(db: dbInterface, date: str, team1: str, team2: str, 
                     proj: pd.DataFrame = None, scores: pd.DataFrame = None,
-                    kern_sig: float = GKERN_SIG):
+                    kern_sig: float = GKERN_SIG, actual_played: bool = False):
     """
     Predicts the probability of victory for a matchup between the two teamIDs
     from the perspective of the morning of the specified date
@@ -325,14 +360,23 @@ def predict_matchup(db: dbInterface, date: str, team1: str, team2: str,
                                         actual number of games played by each player,
                                         instead of the predicted number played.
         kern_sig (float, optional): STD of Gaussian kernal. Defaults to GKERN_SIG.
+        actual_played (bool, optional): If reviewing past predictions, adjust the games
+                                       played estimate to reflect the actual number of games
+                                       played for each player. Can only select if proj is not
+                                       provided, otherwise must do in proj.
 
     Returns:
         (overall p1 victory prob, overall p2 victory prob, overall tie),
-        {stat: (p1 victory, p2 victory tie)}
+        {stat: (p1 victory, p2 victory tie)},
+        {outcome: probability}
+        {stat: (p1 final total, p2 final total)}
     """
     # Get proj if not given
     if proj is None:
         proj = proj_all_players(db, date, kern_sig, [team1, team2])
+        final_date = db.week_date_range(db.week_for_date(date))[1]
+        if actual_played:
+            proj = adjust_for_actual_played(db, proj, date, final_date, kern_sig)
 
     # Get score
     if scores is None:
@@ -342,20 +386,17 @@ def predict_matchup(db: dbInterface, date: str, team1: str, team2: str,
     # Make projection dictionary to feed to prob_victory
     proj_dict = {}
     current_scores = {}
+    proj_final = {}
     for col in utils.STATS_COLS:
-        proj_dict[col] = (proj.loc[team1][col].sum(),
-                          proj.loc[team2][col].sum())
+        proj_dict[col] = (proj.loc[team1].apply(lambda row: row[col]*row["exp_num_to_play"], axis=1).sum(),
+                          proj.loc[team2].apply(lambda row: row[col]*row["exp_num_to_play"], axis=1).sum())
         current_scores[col] = (scores.loc[team1][col],
                                scores.loc[team2][col])
+        proj_final[col] = (proj_dict[col][0] + current_scores[col][0],
+                           proj_dict[col][1] + current_scores[col][1])
     
-    return prob_victory(proj_dict, current_scores)
-
-    
-    
-    
-
-
-    return
+    breakpoint()
+    return prob_victory(proj_dict, current_scores) + (proj_final,)
 
 
 def assign_roster_spots(players: pd.DataFrame,
@@ -462,7 +503,9 @@ def prob_victory(proj: dict[str, tuple[float]],
 
     Returns: np.array and dict
         (overall p1 victory prob, overall p2 victory prob, overall tie),
-        {stat: (p1 victory, p2 victory tie)}
+        {stat: (p1 victory, p2 victory tie)},
+        std for percent stats,
+        {final score: probability}
     """
 
     simple_stats = ["PTS", "3PTM", "REB", "AST", "ST", "BLK", "TO"]
@@ -481,28 +524,50 @@ def prob_victory(proj: dict[str, tuple[float]],
             stat_victory[stat] = (w1, w2, stat_victory[stat][2])
 
     # Go through percentage stats
-    percent_std = {}
     for stat in percent_stats:
         attempts = proj[percent_stats[stat][0]]
         made = proj[percent_stats[stat][1]]
         current_score = (current_scores[percent_stats[stat][0]],
                          current_scores[percent_stats[stat][1]])
                          
-        stat_victory[stat], moment1, moment2 = ratio_prob(attempts, made,
-                                                          current_score=current_score)
-        percent_std[stat] = [0, 0]
-        percent_std[stat][0] = moment1
-        percent_std[stat][1] = moment2
+        stat_victory[stat] = ratio_prob(attempts, made,
+                                        current_score=current_score)
 
 
     # Loop through all 19,683 possible stat winning combinations/ties
     # iterate over all lists of 9 zeros (p1 victory) and ones (p2 victory), and twos (ties)
     probs = np.zeros(3)
+    # Record probability of each outcome type (i.e, 5-4 victory, 4-4-1 tie)
+    outcomes = {}
+    # Pick win/loss/tie for each stat
     for combo in product(np.arange(3), repeat=9):
+        # Classify the outcome
+        players, wins = np.unique(combo, return_counts=True)
+        players = list(players)
+        key = []
+        if 0 in players:
+            key.append(wins[players.index(0)])
+        else:
+            key.append(0)
+        if 1 in players:
+            key.append(wins[players.index(1)]) 
+        else:
+            key.append(0) 
+        if 2 in players:
+            key.append(wins[players.index(2)])
+        else:
+            key.append(0)
+        key = tuple(key)
+
+        # Calculate probability of this outcome
         p = 1
         for i, stat in enumerate(stat_victory):
             p*=stat_victory[stat][combo[i]]
-        players, wins = np.unique(combo, return_counts=True)
+        if key in outcomes:
+            outcomes[key] += p
+        else:
+            outcomes[key] = p
+
         # One player gets no wins
         if 1 not in players:
             probs[0]+=p
@@ -521,61 +586,52 @@ def prob_victory(proj: dict[str, tuple[float]],
     # Normalize to smooth out numerical relics
     probs/=np.sum(probs)
     
-    return probs, stat_victory, percent_std
+    return probs, stat_victory, outcomes
 
 
-
-
-
-
-
-
-
-
-
-def past_preds(sc, gm, curLg, week, savename=None):
-    """
-    Does the predictions as if they were at the start of the last week
-
-    Args:
-        week (int): week to test
-
-    returns:
-        dict proj for the week
-        matchup_df showing results for the week
-    """
-
-    # sc, gm, curLg = refresh_oauth_file(oauthFile = 'yahoo_oauth.json')
-
-    d0 = curLg.week_date_range(week)[0]
-
-    # print("Predictions for week", week, "from dates:", curLg.week_date_range(week))
-
+def matchup_matrix(db: dbInterface, date: str, kern_sig: float = GKERN_SIG,
+                   actual_played: bool = False):
     
-    players = get_all_taken_players_extra(sc, curLg, week, actual_played=True, include_today=True)
-    matchup_df = extract_matchup_scores(curLg, week, nba_cols=True)
+    # Record stat projections for everyone
+    total_proj = {}
+    order = []
 
-    # Zero out matchup_df 
-    matchup_df_blank = matchup_df.copy()
-    for stat in CORE_STATS:
-        if stat in matchup_df_blank.columns:
-            matchup_df_blank[stat] = 0
+    # Precompute projected stats
+    proj = proj_all_players(db, date, kern_sig, actual_played=actual_played)
+
+    # Get Scoreboard
+    scoreboard = db.matchup_score(db.week_for_date(date), date)
+    managers = np.unique(scoreboard["teamID"])
+    order = [db.teamID_lookup(x)[0] for x in managers]
+    probMat = np.zeros((len(managers), len(managers)))
+    for i1, m1 in enumerate(managers):
+        for i2, m2 in enumerate(managers):
+            if i2 > i1:
+                prob, stats, outcomes, totals = predict_matchup(db, date, m1, m2,
+                                                scores=scoreboard,
+                                                proj=proj,
+                                                kern_sig=kern_sig)
+
+                # Record victory probability and total predicted stats
+                probMat[i1, i2] = prob[0]
+                probMat[i2, i1] = prob[1]
+                if m1 not in total_proj:
+                    entry = {}
+                    for stat in totals:
+                        entry[stat] = totals[stat][0]
+                    total_proj[m1] = entry
+                if m2 not in total_proj:
+                    entry = {}
+                    for stat in totals:
+                        entry[stat] = totals[stat][1]
+                    total_proj[m2] = entry
+            elif i2 == i1:
+                probMat[i1, i2] = np.nan
+
+    return probMat, order, total_proj
 
 
-    stats = return_all_taken_stats(curLg, tp=players, date=d0)
-    
-    proj = project_stats_team(players, stats, acutal_played=True)
-
-    if not savename is None:
-        probMat = ideal_matrix(proj, num_games=None, 
-                    savename=savename, matchup_df=matchup_df_blank, week=week)
-
-
-    return proj, matchup_df
-
-
-
-def run_predictions(sc, gm, curLg, week, folder, midweek=False):
+def run_predictions(db, date):
 
     players = get_all_taken_players_extra(sc, curLg, week, include_today=False)
 
@@ -618,7 +674,8 @@ if __name__ == "__main__":
     t0 = time.time()
     # db.player_stats("Paul George")
     proj = proj_all_players(db, date)
-    calc_multiplier(proj)
+    # calc_multiplier(proj)
+    proj = adjust_for_actual_played(db, proj, date, db.week_date_range(week)[1])
     t1 = time.time()
     # db.get_nba_stats("WHERE PLAYER_NAME LIKE 'Paul George'")
     # entries = calc_actual_played(db, "418.l.20454.t.4", date, date2)
@@ -632,71 +689,7 @@ if __name__ == "__main__":
 
     print(t2-t1)
 
-    res = {"Overall":[]}
-    week = 17
-    # week = 22
-    # team1, team2 = "418.l.20454.t.8", "418.l.20454.t.10"
-    # team1, team2 = "418.l.20454.t.8", "418.l.20454.t.4"
-    team1, team2 = "418.l.20454.t.8", "418.l.20454.t.7"
-    date_range = utils.date_range(db.week_date_range(week)[0], db.week_date_range(week)[1])
-    for date in date_range:
-        #  res.append(predict_matchup(db, date, "418.l.20454.t.8", "418.l.20454.t.4")[0])
-        preds = predict_matchup(db, date, team1, team2)
-        res["Overall"].append(preds[0])
-        for stat in preds[1]:
-            if stat not in res:
-                res[stat] = []
-            res[stat].append(preds[1][stat])
     
-    final_scoreboard = db.matchup_score(week)
-    for stat in res:
-        res[stat] = np.vstack(res[stat])
-        if stat == "Overall":
-            winners = utils.matchup_winner(final_scoreboard.loc[team1], final_scoreboard.loc[team2])
-        else:
-            winners = [final_scoreboard.loc[team1][stat], final_scoreboard.loc[team2][stat]]
-        if stat != "TO":
-            if winners[0] > winners[1]:
-                res[stat] = np.vstack((res[stat], np.array([1,0,0])))
-            elif winners[0] < winners[1]:
-                res[stat] = np.vstack((res[stat], np.array([0,1,0])))
-            else:
-                res[stat] = np.vstack((res[stat], np.array([0,0,1])))
-        else:
-            if winners[0] > winners[1]:
-                res[stat] = np.vstack((res[stat], np.array([0,1,0])))
-            elif winners[0] < winners[1]:
-                res[stat] = np.vstack((res[stat], np.array([1,0,0])))
-            else:
-                res[stat] = np.vstack((res[stat], np.array([0,0,1])))
-    
-    
-    xlabels = date_range + ["Final"]
-    fig, axd = plt.subplot_mosaic([["Overall", "Overall", "Overall"],
-                                   ["FG%", "FT%", "3PTM"],
-                                   ["PTS", "REB", "AST"],
-                                   ["ST", "BLK", "TO"]],
-                              figsize=(9, 12), layout="constrained")
-    
-    fig.suptitle(f"Predicted Results from Morning of Specified Day (Week {week})")
-    for stat in res:
-        # for k in axd:
-        #     annotate_axes(axd[k], f'axd["{k}"]', fontsize=14)
-        ax = axd[stat]
-        ax.plot(res[stat][:,0], label=db.teamID_lookup(team1)[0], marker=".", lw=1)
-        ax.plot(res[stat][:,1], label=db.teamID_lookup(team2)[0], marker=".", lw=1)
-        ax.plot(res[stat][:,2], label="Tie", marker=".", lw=1)
-        ax.set_title(stat)
-        ax.grid()
-        if stat == "Overall":
-            ax.set_ylabel("Probability")
-            ax.set_xlabel("Date")
-            ax.legend()
-            ax.set_xticks(ticks=np.arange(len(xlabels)), labels=xlabels)
-        else:
-            ax.set_xticks(ticks=np.arange(len(xlabels)), labels=[""]*len(xlabels))
-    # plt.tight_layout()
-    plt.savefig("test.png")
 
 
     # sc, gm, curLg = refresh_oauth_file(oauthFile = 'yahoo_oauth.json')

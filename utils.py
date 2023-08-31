@@ -453,13 +453,20 @@ def matchup_winner(stats1, stats2):
     for stat in ["3PTM", "PTS", "REB", 
                  "AST", "ST", "BLK",
                  "TO", "FG%", "FT%"]:
-        if stats1[stat] > stats2[stat]:
-            counts[0] += 1
-        elif stats1[stat] < stats2[stat]:
-            counts[1] += 1
+        if stat != "TO":
+            if stats1[stat] > stats2[stat]:
+                counts[0] += 1
+            elif stats1[stat] < stats2[stat]:
+                counts[1] += 1
+            else:
+                counts[2] += 1
         else:
-            counts[2] += 1
-
+            if stats1[stat] > stats2[stat]:
+                counts[1] += 1
+            elif stats1[stat] < stats2[stat]:
+                counts[0] += 1
+            else:
+                counts[2] += 1
     return counts
 
 
