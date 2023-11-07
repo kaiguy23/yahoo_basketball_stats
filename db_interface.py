@@ -209,7 +209,7 @@ class dbInterface:
             self.fantasy_lookup = self.get_fantasy_rosters().groupby("name")
         if self.nba_stats is None and self.check_table_exists(f"NBA_STATS_{self.season}"):
             self.nba_stats = self.get_nba_stats().groupby("PLAYER_NAME")
-        if self.nba_rosters is None and self.check_table_exists(f"NBA_ROSTERS{self.season}"):
+        if self.nba_rosters is None and self.check_table_exists(f"NBA_ROSTERS_{self.season}"):
             self.nba_rosters = self.get_nba_rosters().groupby("PLAYER_NAME")
 
         # Build the weeks dataframe if it hasn't been built yet
@@ -270,6 +270,15 @@ class dbInterface:
         if not isinstance(date, str):
             date = date.strftime(utils.DATE_SCHEMA)
         return self.get_fantasy_rosters(f"WHERE date LIKE '{date}'")
+    
+    def current_week(self) -> int:
+        """
+        Returns the current week defined by utils.TODAY
+
+        Returns:
+            int: Yahoo week number
+        """
+        return self.week_for_date(utils.TODAY_STR)
 
     def week_for_date(self, date: Union[str, datetime.datetime]) -> int:
         """
@@ -498,9 +507,7 @@ class dbInterface:
             nba_team (str): NBA team 3 letter abbreviation
                             i.e., GSW
             week (int): Yahoo week in the season
-            upto (str or datetime): instead return games
-                                    before and after the given
-                                    date (upto date is in before)
+            date (str or datetime): date to return score for
 
         Returns:
             pd.DataFrame: matchups for the week with scores
@@ -508,7 +515,7 @@ class dbInterface:
         # Check date is in the right week
         if isinstance(date, str):
             # Convert from string to date
-            if date != "":
+            if str(date) != "":
                 if self.week_for_date(date) != week:
                     raise(Exception(f"date {date} not in correct week ({week})"))
                 else:
@@ -547,14 +554,15 @@ class dbInterface:
 
         for team in sched.teamID:
             sql_query = f"WHERE week LIKE {week} AND teamID LIKE '{team}' "
-            sql_query += f"AND GAME_DATE <= '{date.strftime(utils.DATE_SCHEMA)}'"
+            sql_query += f"AND GAME_DATE < '{date.strftime(utils.DATE_SCHEMA)}'"
             team_stats = self.get_nba_stats(sql_query)
-            # Filter out people who were on IL
-            if team_stats.empty:
-                continue
-            team_stats = team_stats[["IL" not in x and "BN" != x
-                                     for x in team_stats["selected_position"].values]]
+            # Filter out people who were on IL or bench
+            team_stats = team_stats[team_stats["selected_position"].isin(utils.ACTIVE_POS)]
             for stat in utils.STATS_COLS:
+                # Set to 0 if empty -> beginning of the week
+                # This will also set the attemps/made columns
+                if team_stats.empty:
+                    sched.at[team, stat] = 0
                 sched.at[team, stat] = team_stats[stat].sum()
             for stat in utils.PERC_STATS:
                 attempts = stat.replace("%", "A")
@@ -567,6 +575,23 @@ class dbInterface:
                     
 
         return sched
+    
+
+    def player_contributions(self, week:int, teamID: str):
+
+        ros = self.get_fantasy_rosters()
+        ros = ros[ros.teamID == teamID]
+        players = np.unique(ros["name"])
+        all_stats = []
+        for player in players:
+            stats = db.player_stats(player)
+            stats = stats[stats["week"]==1][utils.STATS_COLS].sum()
+            stats["name"] = player
+            all_stats.append(stats[["name"]+utils.STATS_COLS])
+        all_stats = pd.DataFrame(all_stats)
+        all_stats.set_index("name", inplace=True)
+
+        return all_stats
 
 
 if __name__ == "__main__":

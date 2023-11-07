@@ -150,6 +150,8 @@ class dbBuilder:
         does not have statistics present (i.e., PTS == 0) and goes
         through the end of the season.
         """
+
+        print("Updating Fantasy Schedule")
         
         # Get information about the current time in the league
         start_week = 1
@@ -162,6 +164,7 @@ class dbBuilder:
         table_exists = self.check_table_exists(table_name=table_name)
         if table_exists:
             df = pd.read_sql_query(f"SELECT * FROM {table_name}", self.con)
+            df = df[df["startDate"] != ""]
             max_with_schedule = df['week'].max()
 
             # If we already have a schedule through the end of the year
@@ -200,13 +203,19 @@ class dbBuilder:
                 start_day = ""
                 end_day = ""
 
-
-            df = utils.extract_matchup_scores(self.lg, week, nba_cols=False)
-            df['week'] = week
-            df['startDate'] = start_day
-            df['endDate'] = end_day
-            df.to_sql(table_name, self.con, if_exists="append",index=False)
-            self.con.commit()
+            try:
+                df = utils.extract_matchup_scores(self.lg, week, nba_cols=False)
+                df['week'] = week
+                df['startDate'] = start_day
+                df['endDate'] = end_day
+                df.to_sql(table_name, self.con, if_exists="append",index=False)
+                self.con.commit()
+            except KeyError:
+                # Playoffs
+                if week >= end_week - 2:
+                    print("Could not get fantasy schedule for week", week, "(it's in the playoffs)")
+                else:
+                    raise KeyError
 
 
         return
@@ -230,7 +239,8 @@ class dbBuilder:
         # Start and end days to get stats for
         db_reader = dbInterface(self.db_file)
         start_day = db_reader.week_date_range(1)[0]
-        end_day = db_reader.week_date_range(self.lg.end_week())[1]
+        # end_day = db_reader.week_date_range(self.lg.end_week())[1]
+        end_day = utils.TODAY
 
         # Get the fantasy rosters
         fantasy_rosters = db_reader.get_fantasy_rosters()
@@ -382,6 +392,7 @@ class dbBuilder:
         # Only process weeks
         # that are present in both the fantasy schedule
         # And the NBA schedule
+        fantasy_schedule = fantasy_schedule[fantasy_schedule["startDate"] != ""]
         start_week = fantasy_schedule['week'].min()
         end_week = fantasy_schedule['week'].max()
 
@@ -438,9 +449,20 @@ class dbBuilder:
         have final scores on the games.
 
         """
+
+        print("Updating NBA Schedule")
         
         start_day = self.lg.week_date_range(1)[0]
-        end_day = self.lg.week_date_range(self.lg.end_week())[1]
+        # Will Error if it's too far in the future
+        try:
+            end_day = self.lg.week_date_range(self.lg.end_week())[1]
+            end_day = min(end_day, utils.TODAY)
+        except RuntimeError:
+            # Go to the end of the week avaliable in the fantasy schedule
+            db_reader = dbInterface(self.db_file)
+            fantasy_schedule = db_reader.get_fantasy_schedule()
+            end_day = fantasy_schedule["endDate"].max()
+            end_day = datetime.datetime.strptime(end_day, utils.DATE_SCHEMA)
 
         # Find the last day we have games for, and find the last 
         # day we have game stats for (i.e. PTS aren't None)
@@ -502,7 +524,7 @@ class dbBuilder:
 
         Completely replaces the table each time, reflects current team/names
         """
-
+        print("Updating Fantasy Teams")
         table_name = f"FANTASY_TEAMS_{self.season}"
         team_df = utils.get_team_ids(self.sc,self.lg).drop('teamObject', axis=1)
         team_df.to_sql(table_name, self.con, if_exists="replace",index=False)
@@ -533,7 +555,12 @@ class dbBuilder:
         db_reader = dbInterface(self.db_file)
 
         start_day = self.lg.week_date_range(1)[0]
-        end_day = self.lg.week_date_range(self.lg.end_week())[1]
+        # Will Error if it's too far in the future
+        try:
+            end_day = self.lg.week_date_range(self.lg.end_week())[1]
+            end_day = min(end_day, utils.TODAY)
+        except RuntimeError:
+            end_day = utils.TODAY
 
         table_name = f"FANTASY_ROSTERS_{self.season}"
         table_exists = self.check_table_exists(table_name=table_name)
@@ -561,7 +588,7 @@ class dbBuilder:
                 
                 # Add date information
                 current_roster['date'] = date.strftime(utils.DATE_SCHEMA)
-                current_roster['week'] = db_reader.week_for_date(current_roster['date'])
+                current_roster['week'] = db_reader.week_for_date(date)
 
                 # Add team information
                 for col in ["teamID", "manager", "teamName"]:
@@ -619,7 +646,10 @@ class dbBuilder:
         nba_teams = fantasy_rosters["nba_team"].values
         for i, row in fantasy_rosters.iterrows():
             if nba_teams[i] == "":
-                nba_teams[i] = db_reader.player_affiliation(row["name"], row["date"])[1]
+                try:
+                    nba_teams[i] = db_reader.player_affiliation(row["name"], row["date"])[1]
+                except:
+                    breakpoint()
         
         fantasy_rosters["nba_team"] = nba_teams
 
@@ -632,23 +662,34 @@ class dbBuilder:
         """
         Updates the database in the correct order
         """
+        print("------------------------------------")
         self.update_fantasy_teams()
+        print("------------------------------------")
         self.update_fantasy_schedule()
+        print("------------------------------------")
         self.update_fantasy_rosters(pace=False)
+        print("------------------------------------")
         self.update_nba_stats()
+        print("------------------------------------")
         self.update_nba_schedule()
+        print("------------------------------------")
         self.update_num_games_per_day()
+        print("------------------------------------")
         self.update_nba_rosters()
+        print("------------------------------------")
         self.add_nba_team_info_to_fantasy_rosters()
+        print("------------------------------------")
 
 
 if __name__ == "__main__":
 
-    f = "past_season_dbs/yahoo_fantasy_2022_23.sqlite"
+    # f = "past_season_dbs/yahoo_fantasy_2022_23.sqlite"
+    f = "yahoo_fantasy_2023_24.sqlite"
 
     builder = dbBuilder(f, debug=True)
+    builder.update_db()
     # builder.delete_table("GAMES_PER_DAY_2022_23")
-    builder.update_num_games_per_day()
+    # builder.update_num_games_per_day()
 
     # builder.add_nba_team_info_to_fantasy_rosters()
 

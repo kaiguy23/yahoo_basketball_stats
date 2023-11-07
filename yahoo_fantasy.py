@@ -16,8 +16,6 @@ import yahoo_fantasy_api as yfa
 
 from utils import refresh_oauth_file, fix_names_teams, get_team_ids, extract_matchup_scores
 
-from pred import run_predictions, past_preds
-
 
 def highlight_adds(cols, addedCountingStatsDict):
     """
@@ -371,16 +369,16 @@ if __name__ == '__main__':
     # for each previous week (don't include the current one)
     # yahoo week index starts at 1 so make sure to start looping at 1
     # for week in range(2,curLg.current_week()):
-    week = curLg.current_week()
+    # week = curLg.current_week()
+    week = 2
 
     # # set up the save directory for results
-    saveDir=os.path.join('matchup results', '2022-2023')
+    saveDir=os.path.join('matchup results', '2023-2024')
     weekSaveDir = os.path.join(saveDir, f'week{week}')
     os.makedirs(weekSaveDir,exist_ok=True)
 
 
-    doNormalStats = False
-    doPreds = True
+    doNormalStats = True
 
     if doNormalStats:
 
@@ -562,18 +560,6 @@ if __name__ == '__main__':
         
         finalAddsDF = finalComparisonDF.style.apply(highlight_adds, addedCountingStatsDict = addedCountingStatsDict, subset = ['manager'] + countingStats,axis= 1)
         dfi.export(finalAddsDF, os.path.join(weekSaveDir,'addsComparison.png'))
-
-
-
-    if doPreds:
-
-        retrospective = os.path.join('matchup results', '2022-2023', f'week{week}', 'retrospective.png')
-        past_preds(sc, gm, curLg, week, retrospective)
-
-        # predsSaveDir = os.path.join('matchup results', '2022-2023', f'week{week+1}', 'predictions')
-        # os.makedirs(predsSaveDir,exist_ok=True)
-        # run_predictions(sc, gm, curLg, week+1, predsSaveDir)
-
     
     
 

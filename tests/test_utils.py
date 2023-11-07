@@ -50,6 +50,22 @@ def test_yahoo_to_nba_name():
     assert utils.yahoo_to_nba_name("OG Anunoby") == "O.G. Anunoby"
     assert utils.yahoo_to_nba_name("Yi Sheng Ong",
                                    {"Yi Sheng Ong": "Asian Jordan"}) == "Asian Jordan"
+    
+def test_matchip_winner():
+
+    # Selected week 19 matchups
+    scores = db.matchup_score(19)
+    assert utils.matchup_winner(scores.loc["418.l.20454.t.8"],
+                                scores.loc["418.l.20454.t.10"])[0] == [5, 4, 0]
+    assert utils.matchup_winner(scores.loc["418.l.20454.t.8"],
+                                scores.loc["418.l.20454.t.10"])[1] == 0
+    assert utils.matchup_winner(scores.loc["418.l.20454.t.10"],
+                                scores.loc["418.l.20454.t.8"])[1] == 1
+    assert utils.matchup_winner(scores.loc["418.l.20454.t.8"],
+                                scores.loc["418.l.20454.t.12"])[0] == [4, 4, 1]
+    assert utils.matchup_winner(scores.loc["418.l.20454.t.8"],
+                                scores.loc["418.l.20454.t.12"])[1] == 2
+
 
 
 if __name__ == "__main__":

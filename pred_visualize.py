@@ -1,3 +1,8 @@
+from pathlib import Path
+import os
+
+from scipy.stats import skellam, poisson, norm
+
 import numpy as np
 import pandas as pd
 import seaborn as sn
@@ -7,7 +12,8 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 
 import pred
-
+from db_interface import dbInterface
+from db_builder import dbBuilder
 
 def plot_matchup_history():
 
@@ -114,7 +120,8 @@ def plot_matchup_matrix(pred_mat: np.array, order: list[str],
         # add in patches to mark who actually played who in that week
         # get number of unique matchups:
         for m in matchup_df['matchupNumber'].unique():
-            i,j = matchup_df[matchup_df['matchupNumber']==m].index
+            teams = matchup_df[matchup_df['matchupNumber']==m].manager
+            i, j = order.index(teams[0]), order.index(teams[1])
             ax.add_patch(Rectangle((i,j), 1, 1, fill=False, edgecolor='blue', lw=3))
             ax.add_patch(Rectangle((j,i), 1, 1, fill=False, edgecolor='blue', lw=3))
 
@@ -128,7 +135,12 @@ def plot_matchup_matrix(pred_mat: np.array, order: list[str],
         plt.close(f)
 
 
-def plot_matchup_summary(proj, p1, p2, matchup_df = None, savename=None):
+# def predict_matchup(db: dbInterface, date: str, team1: str, team2: str, 
+#                     proj: pd.DataFrame = None, scores: pd.DataFrame = None,
+#                     kern_sig: float = GKERN_SIG, actual_played: bool = False):
+    
+def plot_matchup_summary(db: dbInterface, date: str, proj: pd.DataFrame, p1: str, p2: str,
+                         matchup_df: pd.DataFrame = None, savename: str = None):
     """
     Plots a summary of the specified matchup, showing the 90% confidence interval
     for each stat, showing the probability that either player will 
@@ -136,17 +148,22 @@ def plot_matchup_summary(proj, p1, p2, matchup_df = None, savename=None):
 
 
     Args:
-        proj (dict): dictionary that maps player to projected stats
+        db (dbInterface): dbInterface object
+        date (str): Date in YYYY-MM-DD format
+        proj (dict): dictionary that maps player to (projected stats, current stats)
         p1 (str): name of the first player
         p2 (str): name of the second player
         matchup_df (pandas df, optional): matchup df with the current score for midweek analysis. Defaults to None.
-    """
+        savename (str): file to save the matchup summary to
+     """
 
-    p,s,m = prob_victory(proj, p1, p2, matchup_df=matchup_df)
-    
+    probs, stat_victory, outcomes, proj_stats = pred.predict_matchup(db, date, db.manager_to_teamID(p1),
+                                                                     db.manager_to_teamID(p2), proj,
+                                                                     scores = matchup_df)
+    # breakpoint()
     f, ax = plt.subplots(nrows=3,ncols=3, figsize=(20,14))
 
-    vic = [np.round(x*100,2) for x in p]
+    vic = [np.round(x*100,2) for x in probs]
     f.suptitle(f"Probability of Victory - {p1}: {vic[0]}%, {p2}: {vic[1]}%, Tie: {vic[2]}%", fontsize=26)
 
     # epsilon = 0.0001
@@ -158,15 +175,16 @@ def plot_matchup_summary(proj, p1, p2, matchup_df = None, savename=None):
     
    
     for ip, p in enumerate((p1,p2)):
-        for i, stat in enumerate(s):
+        teamID = db.manager_to_teamID(p)
+        for i, stat in enumerate(stat_victory):
             if "%" in stat:
-                mu = m[stat][p][0]
-                sigma = m[stat][p][1]
+                mu = proj_stats[stat][ip][0]
+                sigma = proj_stats[stat][ip][1]
                 x = (norm.ppf(epsilon, loc=mu, scale=sigma),
                     norm.ppf(1-epsilon,loc=mu, scale=sigma))
                 # prob = norm.pmf(x, loc=mu, scale=sigma)
             else:
-                mu = proj[p][stat]
+                mu = proj_stats[stat][ip]
                 x = np.arange(poisson.ppf(epsilon, mu),
                     poisson.ppf(1-epsilon, mu)+1)
                 # prob = poisson.pmf(x, mu)
@@ -181,7 +199,8 @@ def plot_matchup_summary(proj, p1, p2, matchup_df = None, savename=None):
             exp_val = mu
             if "%" not in stat and not matchup_df is None:
                 exp_val+=grouped.get_group(p)[stat].iloc[0]
-            a.errorbar(exp_val, (1-ip)*0.01, xerr=np.array((mu-x[0], x[-1]-mu)).reshape(2,1), label=p, capsize = 4, fmt = 'o', alpha=0.75)
+            a.errorbar(exp_val, (1-ip)*0.01, xerr=np.array((mu-x[0], x[-1]-mu)).reshape(2,1),
+                       label=p, capsize = 4, fmt = 'o', alpha=0.75)
             a.set_ylim([-0.005,0.015])
             a.set_yticks([])
             if ip == 1:
@@ -192,3 +211,63 @@ def plot_matchup_summary(proj, p1, p2, matchup_df = None, savename=None):
     plt.savefig(savename)
 
     return
+
+
+def run_predictions(db: dbInterface, week: int, folder: str):
+    """
+    Does the weekly prediction/figure generation
+    for the next week.
+
+    Args:
+        db (dbInterface): dbInterface object
+        week (int): fantasy week to do predictions for
+        folder (str): folder to save figures to
+    """
+
+    d0, df = db.week_date_range(week)
+    proj = pred.proj_all_players(db, d0)
+    pred_mat, order, stats = pred.matchup_matrix(db, d0, actual_played=False)
+    
+    matchup_df = db.matchup_score(week, d0)
+
+    # Make a matrix plot of the whole league
+    plot_matchup_matrix(pred_mat, order,
+                        savename=Path(folder,"pred_mat.png"),
+                        matchup_df=matchup_df)
+    
+    
+
+    # Make a detailed figure for each matchup    
+    grouped = matchup_df.groupby("matchupNumber")
+    for i in grouped.indices:
+        matchup = grouped.get_group(i)
+        p1 = matchup['manager'].iloc[0]
+        p2 = matchup['manager'].iloc[1]
+        savename = str(Path(folder,f"{p1}_vs_{p2}.png"))
+        plot_matchup_summary(db, d0, proj, p1, p2,
+                             matchup_df=matchup_df, savename=savename)
+
+    # Make a table of suggested adds
+
+
+def run_past_predictions(db, week):
+    return
+
+
+if __name__ == "__main__":
+    
+    doPreds = True
+    updateDB = False
+    week = 3
+    db_file = "yahoo_fantasy_2023_24.sqlite"
+    db = dbInterface(db_file)
+    if updateDB:
+        dbBuilder(db_file).update_db()
+    if doPreds:
+
+        # retrospective = os.path.join('matchup results', '2022-2023', f'week{week}', 'retrospective.png')
+        # past_preds(sc, gm, curLg, week, retrospective)
+
+        predsSaveDir = os.path.join('matchup results', '2023-2024', f'week{week}', 'predictions')
+        os.makedirs(predsSaveDir,exist_ok=True)
+        run_predictions(db, week=week, folder=predsSaveDir)

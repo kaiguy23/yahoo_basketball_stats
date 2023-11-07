@@ -55,7 +55,8 @@ ROSTER_SPOTS = {"PG": 1, "SG": 1, "G": 1, "SF": 1,
                 "PF": 1, "F": 1, "C": 2, "Util": 2}
 
 
-SPECIAL_NAMES = {}
+SPECIAL_NAMES = {"P.J. Washington Jr.": "P.J. Washington",
+                 "OG Anunoby": "OG Anunoby"}
 def yahoo_to_nba_name(name: str, hardcoded: dict = SPECIAL_NAMES) -> str:
     """
     Converts a yahoo API name to NBA api name. By in large they have the
@@ -79,7 +80,10 @@ def yahoo_to_nba_name(name: str, hardcoded: dict = SPECIAL_NAMES) -> str:
     # Everything matches
     try:
         player = find_players_by_full_name(name)
-        return player[0]['full_name']
+        if player:
+            return player[0]['full_name']
+        else:
+            raise ValueError(f"Player {name} not found")
 
     # Try matching first and last names and seeing if there's only one result
     # spit it out to be manually hard coded if not
@@ -230,24 +234,36 @@ def find_closest_date(d: Union[str, datetime.datetime],
     return closest_i
 
 
-def binarySearch(array, x, low, high):
+def fix_names_teams(df):
+    """
+    edits the dataframe's teamName and manager columns so we can save them our correctly
+    
 
-    # Repeat until the pointers low and high meet each other
-    while low <= high:
+    Parameters
+    ----------
+    df : pandas dataframe
+        contains teamName and manager columns.
 
-        mid = low + (high - low)//2
+    Returns
+    -------
+    df : pandas dataframe
+        modified dataframe.
 
-        if array[mid] == x:
-            return mid
-
-        elif array[mid] < x:
-            low = mid + 1
-
-        else:
-            high = mid - 1
-
-    return -1
-
+    """
+    for idx, row in df.iterrows():
+        manager = row['manager']
+        team = row['teamName']
+        newManager = ''
+        newTeam = ''
+        for char in manager:
+            if char.isalnum() or char == ' ' or char == '-':
+                newManager += char
+        for char in team:
+            if char.isalnum() or char == ' ' or char == '-':
+                newTeam += char
+        df.loc[idx, 'manager'] = newManager
+        df.loc[idx, 'teamName'] = newTeam
+    return df
 
 
 def get_team_ids(sc: OAuth2, league: yfa.league.League) -> pd.DataFrame:
@@ -438,7 +454,19 @@ def extract_matchup_scores(league: yfa.league.League,
 
     return df
 
-def date_range(date1: str, date2: str):
+def date_range(date1: str, date2: str) -> list[str]:
+    """
+    Returns a list of date
+    strings for all dates between date1
+    and date2 (including both date1 and date2)
+
+    Args:
+        date1 (str): first date in YYYY-MM-DD format
+        date2 (str): second date in YYYY-MM-DD format
+
+    Returns:
+        list[str]: list of dates
+    """
     dates = []
     start_day = datetime.datetime.strptime(date1, DATE_SCHEMA)
     end_day = datetime.datetime.strptime(date2, DATE_SCHEMA)
@@ -448,6 +476,19 @@ def date_range(date1: str, date2: str):
 
 
 def matchup_winner(stats1, stats2):
+    """
+    Calculates the matchup score and winner
+    for the two stats given
+
+    Args:
+        stats1 (dict or pd.series): player 1's stats
+        stats2 (dict or pd.series): player 2's stats
+
+    Returns:
+        ([p1 wins, p2 wins, ties], 
+        winner index): category scores and an index for who won
+                       0 = p1 win, 1 = p2 win, 2 = tie
+    """
     
     counts = [0, 0, 0]
     for stat in ["3PTM", "PTS", "REB", 
@@ -467,10 +508,29 @@ def matchup_winner(stats1, stats2):
                 counts[0] += 1
             else:
                 counts[2] += 1
-    return counts
+    
+    if counts[0] > counts[1]:
+        winner = 0
+    elif counts[1] > counts[0]:
+        winner = 1
+    else:
+        winner = 2
+
+    return counts, winner
 
 
 def calc_fantasy_points(stats):
+    """
+    Calculates fantasy points according to the yahoo formula
+
+    Args:
+        stats (dict or pd.series): string-indexable container
+                                   with ["PTS", "REB", "AST", 
+                                   "BLK", "ST", "TO"]
+
+    Returns:
+        float: number of fantasy points
+    """
     return (stats["PTS"] + 1.2*stats["REB"] + 1.5*stats["AST"] + 
             3.0*stats["BLK"] + 3.0*stats["ST"] + -1*stats["TO"])
 

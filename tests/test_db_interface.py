@@ -105,7 +105,7 @@ def test_teamID_lookup():
 
 def test_manager_to_teamID():
 
-    assert db.teamID_lookup("Eli") == "418.l.20454.t.8"
+    assert db.manager_to_teamID("Eli") == "418.l.20454.t.8"
 
 
 def test_games_in_week():
@@ -114,16 +114,19 @@ def test_games_in_week():
     assert db.games_in_week("BKN", 1) == 2
     assert db.games_in_week("NOP", 20) == 4
     
-    assert db.games_in_week("DET", 7, "2022-11-28") == (0, 3)
+    assert db.games_in_week("DET", 7, "2022-11-28")[0:2] == (0, 3)
 
-    assert db.games_in_week("ATL", 7, "2022-11-28") == (0, 3)
-    assert db.games_in_week("ATL", 7, "2022-11-29") == (1, 2)
-    assert db.games_in_week("ATL", 7, "2022-11-30") == (1, 2)
-    assert db.games_in_week("ATL", 7, "2022-12-01") == (2, 1)
-    assert db.games_in_week("ATL", 7, "2022-12-02") == (2, 1)
-    assert db.games_in_week("ATL", 7, "2022-12-03") == (3, 0)
-    assert db.games_in_week("ATL", 7, "2022-12-04") == (3, 0)
-
+    assert db.games_in_week("ATL", 7, "2022-11-28")[0:2] == (0, 3)
+    assert db.games_in_week("ATL", 7, "2022-11-29")[0:2] == (1, 2)
+    assert db.games_in_week("ATL", 7, "2022-11-30")[0:2] == (1, 2)
+    assert db.games_in_week("ATL", 7, "2022-12-01")[0:2] == (2, 1)
+    assert db.games_in_week("ATL", 7, "2022-12-02")[0:2] == (2, 1)
+    assert db.games_in_week("ATL", 7, "2022-12-03")[0:2] == (3, 0)
+    assert db.games_in_week("ATL", 7, "2022-12-04")[0:2] == (3, 0)
+    
+    remaining = db.games_in_week("ATL", 7, "2022-11-28")[2]
+    for pair in zip(remaining, [1, 0, 1, 0, 1, 0, 0]):
+        assert pair[0] == pair[1]
 
 def test_matchup_score():
 
@@ -143,6 +146,7 @@ def test_matchup_score():
     assert scores["BLK"] == 34
     assert scores["TO"] == 97
 
+    # After one day
     scores = db.matchup_score(17, "2023-02-07")
     scores = scores[scores.manager.isin(["Gary"])].iloc[0]
     assert abs(scores["FG%"] - 0.522) < 0.001
@@ -155,6 +159,7 @@ def test_matchup_score():
     assert scores["BLK"] == 2
     assert scores["TO"] == 15
 
+    # After zero days
     scores = db.matchup_score(16, "2023-01-30")
     scores = scores[scores.manager.isin(["Gary"])].iloc[0]
     assert scores["FG%"] == 0
@@ -166,3 +171,14 @@ def test_matchup_score():
     assert scores["ST"] == 0
     assert scores["BLK"] == 0
     assert scores["TO"] == 0
+
+    # Last day of week
+    scores = db.matchup_score(17, "2023-02-12")
+    scores = scores[scores.manager.isin(["Fabio"])].iloc[0]
+    assert scores["3PTM"] == 59-9
+    assert scores["PTS"] == 595-40
+    assert scores["REB"] == 205-4
+    assert scores["AST"] == 125-8
+    assert scores["ST"] == 37-2
+    assert scores["BLK"] == 24-1
+    assert scores["TO"] == 64-4
