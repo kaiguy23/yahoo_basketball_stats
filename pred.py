@@ -179,7 +179,7 @@ def ratio_prob(attempts: tuple[int], made: tuple[int],
     tie = np.sum(comp == 0)/samples
     w2 = np.sum(comp < 0)/samples
     
-    return (w1, w2, tie), (np.mean(m1), np.std(m1)), (np.mean(m2), np.std(m2))
+    return (w1, w2, tie), (np.mean(m1/a1), np.std(m1/a1)), (np.mean(m2/a2), np.std(m2/a2))
 
 
 def proj_player_stats(db: dbInterface, name: str,
@@ -263,6 +263,8 @@ def proj_all_players(db: dbInterface, date: str = utils.TODAY_STR,
         # Add games played
         nba_team = row["nba_team"]
         if nba_team != "N/A":
+            if nba_team is None:
+                breakpoint()
             games_played = db.games_in_week(nba_team, week, upto=date)
             entry["games_played"] = games_played[0]
             entry["games_to_come"] = games_played[2]
@@ -487,13 +489,18 @@ def prob_victory(proj: dict[str, tuple[float]],
     # Go through simple counting stats
     for stat in simple_stats:
         current_score = current_scores[stat]
-        stat_victory[stat] = skellam_prob(proj[stat][0], proj[stat][1],
-                                          current_score=current_score)
+        stat_victory[stat] = [skellam_prob(proj[stat][0], proj[stat][1],
+                                          current_score=current_score),
+                                  (proj[stat][0] + current_score[0],
+                                   np.sqrt(proj[stat][0])), 
+                                  (proj[stat][1] + current_score[1],
+                                   np.sqrt(proj[stat][1]))]
         # Reverse for TO
         if stat == "TO":
-            w1 = stat_victory[stat][1]
-            w2 = stat_victory[stat][0]
-            stat_victory[stat] = (w1, w2, stat_victory[stat][2])
+            w1 = stat_victory[stat][0][1]
+            w2 = stat_victory[stat][0][0]
+            stat_victory[stat][0] = (w1, w2, stat_victory[stat][0][2])
+                                  
 
     # Go through percentage stats
     for stat in percent_stats:
@@ -502,7 +509,6 @@ def prob_victory(proj: dict[str, tuple[float]],
         current_score = (current_scores[percent_stats[stat][0]],
                          current_scores[percent_stats[stat][1]])
         
-        # TODO: Propagate out the std of the stats
         stat_victory[stat] = ratio_prob(attempts, made,
                                         current_score=current_score)
 
@@ -535,7 +541,7 @@ def prob_victory(proj: dict[str, tuple[float]],
         # Calculate probability of this outcome
         p = 1
         for i, stat in enumerate(stat_victory):
-            p*=stat_victory[stat][combo[i]]
+            p*=stat_victory[stat][0][combo[i]]
         if key in outcomes:
             outcomes[key] += p
         else:

@@ -11,7 +11,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 
-import pred
+import pred, utils
 from db_interface import dbInterface
 from db_builder import dbBuilder
 
@@ -160,11 +160,22 @@ def plot_matchup_summary(db: dbInterface, date: str, proj: pd.DataFrame, p1: str
     probs, stat_victory, outcomes, proj_stats = pred.predict_matchup(db, date, db.manager_to_teamID(p1),
                                                                      db.manager_to_teamID(p2), proj,
                                                                      scores = matchup_df)
-    # breakpoint()
+    
     f, ax = plt.subplots(nrows=3,ncols=3, figsize=(20,14))
 
     vic = [np.round(x*100,2) for x in probs]
-    f.suptitle(f"Probability of Victory - {p1}: {vic[0]}%, {p2}: {vic[1]}%, Tie: {vic[2]}%", fontsize=26)
+    outcomes_df = []
+    for score in outcomes:
+        entry = {}
+        entry["score"] = score
+        entry["prob"] = outcomes[score]
+        outcomes_df.append(entry)
+    outcomes_df = pd.DataFrame(outcomes_df).sort_values(by="prob", ascending=False)
+    title_str =  f"Probability of Victory - {p1}: {vic[0]}%, {p2}: {vic[1]}%, Tie: {vic[2]}% \n"
+    title_str += f"Most Probable Outcomes - {outcomes_df.iloc[0]['score']}: {int(np.round(outcomes_df.iloc[0]['prob']*100))}%, "
+    title_str += f"{outcomes_df.iloc[1]['score']}: {int(np.round(outcomes_df.iloc[1]['prob']*100))}%, "
+    title_str += f"{outcomes_df.iloc[2]['score']}: {int(np.round(outcomes_df.iloc[2]['prob']*100))}%"
+    f.suptitle(title_str, fontsize=26)
 
     # epsilon = 0.0001
     epsilon = 0.05
@@ -178,13 +189,13 @@ def plot_matchup_summary(db: dbInterface, date: str, proj: pd.DataFrame, p1: str
         teamID = db.manager_to_teamID(p)
         for i, stat in enumerate(stat_victory):
             if "%" in stat:
-                mu = proj_stats[stat][ip][0]
-                sigma = proj_stats[stat][ip][1]
+                mu = stat_victory[stat][ip+1][0]
+                sigma = stat_victory[stat][ip+1][1]
                 x = (norm.ppf(epsilon, loc=mu, scale=sigma),
                     norm.ppf(1-epsilon,loc=mu, scale=sigma))
                 # prob = norm.pmf(x, loc=mu, scale=sigma)
             else:
-                mu = proj_stats[stat][ip]
+                mu = stat_victory[stat][ip+1][0]
                 x = np.arange(poisson.ppf(epsilon, mu),
                     poisson.ppf(1-epsilon, mu)+1)
                 # prob = poisson.pmf(x, mu)
@@ -193,13 +204,10 @@ def plot_matchup_summary(db: dbInterface, date: str, proj: pd.DataFrame, p1: str
             a = ax[row,col]
 
             if ip == 0:
-                vic = np.array([np.round(x*100,2) for x in s[stat]])
+                vic = np.array([np.round(x*100,2) for x in stat_victory[stat][0]])
                 a.set_title(f"{stat} - {p1}: {vic[0]}%, {p2}: {vic[1]}%, Tie: {vic[2]}%")
-            # Add current stats
-            exp_val = mu
-            if "%" not in stat and not matchup_df is None:
-                exp_val+=grouped.get_group(p)[stat].iloc[0]
-            a.errorbar(exp_val, (1-ip)*0.01, xerr=np.array((mu-x[0], x[-1]-mu)).reshape(2,1),
+
+            a.errorbar(mu, (1-ip)*0.01, xerr=np.array((mu-x[0], x[-1]-mu)).reshape(2,1),
                        label=p, capsize = 4, fmt = 'o', alpha=0.75)
             a.set_ylim([-0.005,0.015])
             a.set_yticks([])
@@ -213,7 +221,7 @@ def plot_matchup_summary(db: dbInterface, date: str, proj: pd.DataFrame, p1: str
     return
 
 
-def run_predictions(db: dbInterface, week: int, folder: str):
+def run_predictions(db: dbInterface, week: int, folder: str, today: bool = False):
     """
     Does the weekly prediction/figure generation
     for the next week.
@@ -225,6 +233,9 @@ def run_predictions(db: dbInterface, week: int, folder: str):
     """
 
     d0, df = db.week_date_range(week)
+    if today:
+        d0 = max(d0, utils.TODAY_STR)
+    print("Doing Predictions for Morning of", d0)
     proj = pred.proj_all_players(db, d0)
     pred_mat, order, stats = pred.matchup_matrix(db, d0, actual_played=False)
     
@@ -258,11 +269,12 @@ if __name__ == "__main__":
     
     doPreds = True
     updateDB = False
-    week = 3
+    today = True
+    week = 4
     db_file = "yahoo_fantasy_2023_24.sqlite"
     db = dbInterface(db_file)
     if updateDB:
-        dbBuilder(db_file).update_db()
+        dbBuilder(db_file, debug=True).update_db()
     if doPreds:
 
         # retrospective = os.path.join('matchup results', '2022-2023', f'week{week}', 'retrospective.png')
@@ -270,4 +282,4 @@ if __name__ == "__main__":
 
         predsSaveDir = os.path.join('matchup results', '2023-2024', f'week{week}', 'predictions')
         os.makedirs(predsSaveDir,exist_ok=True)
-        run_predictions(db, week=week, folder=predsSaveDir)
+        run_predictions(db, week=week, folder=predsSaveDir, today=today)

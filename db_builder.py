@@ -76,7 +76,7 @@ class dbBuilder:
 
         # Set up the connection to the sqlite database
         self.db_file = db_file
-        self.con = sqlite3.connect(f)
+        self.con = sqlite3.connect(self.db_file)
         self.cur = self.con.cursor()
 
 
@@ -236,6 +236,8 @@ class dbBuilder:
         the current day.
 
         """
+        ## TODO: UPDATE STATS EVERY TIME?
+
         # Start and end days to get stats for
         db_reader = dbInterface(self.db_file)
         start_day = db_reader.week_date_range(1)[0]
@@ -255,15 +257,15 @@ class dbBuilder:
             print("Updating Player Stats")
 
         # If the table exists, find the most recent day we have stats
-        if table_exists:
-            start_date_str = self.cur.execute(f"SELECT MAX(GAME_DATE) FROM {table_name}").fetchone()[0]
-            if not start_date_str is None:
-                start_day = datetime.datetime.strptime(start_date_str, utils.DATE_SCHEMA)
+        # if table_exists:
+        #     start_date_str = self.cur.execute(f"SELECT MAX(GAME_DATE) FROM {table_name}").fetchone()[0]
+        #     if not start_date_str is None:
+        #         start_day = datetime.datetime.strptime(start_date_str, utils.DATE_SCHEMA)
 
-                # Remove the most recent day, as we'll be overwriting it to make sure
-                # we got final rosters for the day
-                self.cur.execute(f"DELETE FROM {table_name} WHERE GAME_DATE LIKE '{start_date_str}'")
-                self.con.commit()
+        #         # Remove the most recent day, as we'll be overwriting it to make sure
+        #         # we got final rosters for the day
+        #         self.cur.execute(f"DELETE FROM {table_name} WHERE GAME_DATE LIKE '{start_date_str}'")
+        #         self.con.commit()
 
 
         # Get the full nba stats for the season in question
@@ -645,7 +647,7 @@ class dbBuilder:
         # Add missing information
         nba_teams = fantasy_rosters["nba_team"].values
         for i, row in fantasy_rosters.iterrows():
-            if nba_teams[i] == "":
+            if nba_teams[i] == "" or nba_teams[i] is None:
                 try:
                     nba_teams[i] = db_reader.player_affiliation(row["name"], row["date"])[1]
                 except:
