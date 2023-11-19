@@ -59,3 +59,12 @@ To do the predictions, we assume that the statistics of player performance are r
 To calculate the probability of victory in any one category, we take the difference of two Poisson distributions, known as a [Skellam distribution](https://en.wikipedia.org/wiki/Skellam_distribution), and sum the total probabilities to be negative (distribution 2 wins), zero (tie), and positive (distribution 1 wins).
 
 Free throw and fg percentage is more difficult, as it's the ratio of two non-independant Poisson distributions.
+
+
+### Notes on Database:
+
+NBA and Yahoo sometimes have different names for players with abbreviations, like O.G. Aununoby vs. OG Anunoby. By default I have the "name" (info from yahoo_api) or "PLAYER_NAME" (info from nba api) set to be the NBA api name. In the fantasy rosters table I kept the yahoo names in another column titled "yahoo_name"
+
+### Possible Improvements:
+
+- Acurrately assigning rosters for future days. Currently takes the 10 highest by fantasy points, even if their positions would be incompatible.
