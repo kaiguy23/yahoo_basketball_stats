@@ -370,7 +370,7 @@ if __name__ == '__main__':
     # yahoo week index starts at 1 so make sure to start looping at 1
     # for week in range(2,curLg.current_week()):
     # week = curLg.current_week()
-    week = 5
+    week = 6
 
     # # set up the save directory for results
     saveDir=os.path.join('matchup results', '2023-2024')
