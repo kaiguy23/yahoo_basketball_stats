@@ -218,7 +218,7 @@ def create_matchup_comparison(league, df, visualize=True, saveDir='matchup resul
         cmap = matplotlib.colors.LinearSegmentedColormap.from_list("", colors)
 
         # create labels for the axes
-        yAxisLabels = df[['manager', 'teamName']].apply(lambda x: x[0] + '\n' + x[1],axis=1)
+        yAxisLabels = df[['manager', 'teamName']].apply(lambda x: x.iloc[0] + '\n' + x.iloc[1],axis=1)
         xAxisLabels = df['manager']
 
         # do plotting
@@ -304,7 +304,7 @@ def max_min_stats(league, df, visualize=True, saveDir='matchup results'):
     maxStatList = []
     maxCats = df[statCats].max()
 
-    for stat, val in maxCats.iteritems():
+    for stat, val in maxCats.items():
         managers = df.loc[df[stat]==val, 'manager']
         managers = ', '.join(managers.to_list())
         maxStatList.append([stat, val, managers])
@@ -317,7 +317,7 @@ def max_min_stats(league, df, visualize=True, saveDir='matchup results'):
     minStatList = []
     minCats = df[statCats].min()
 
-    for stat, val in minCats.iteritems():
+    for stat, val in minCats.items():
         managers = df.loc[df[stat]==val, 'manager']
         managers = ', '.join(managers.to_list())
         minStatList.append([stat, val, managers])
@@ -370,7 +370,7 @@ if __name__ == '__main__':
     # yahoo week index starts at 1 so make sure to start looping at 1
     # for week in range(2,curLg.current_week()):
     # week = curLg.current_week()
-    week = 3
+    week = 5
 
     # # set up the save directory for results
     saveDir=os.path.join('matchup results', '2023-2024')

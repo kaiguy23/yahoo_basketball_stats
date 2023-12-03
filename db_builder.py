@@ -643,6 +643,13 @@ class dbBuilder:
         # Add the nba team column if it's not there
         if "nba_team" not in fantasy_rosters.columns:
             fantasy_rosters["nba_team"] = ""
+
+        # Fix yahoo name getting
+        names = fantasy_rosters["name"].values
+        for i, row in fantasy_rosters.iterrows():
+            if names[i] == "" or names[i] is None:
+                names[i] = utils.yahoo_to_nba_name(row["yahoo_name"])
+        fantasy_rosters["name"] = names
         
         # Add missing information
         nba_teams = fantasy_rosters["nba_team"].values
@@ -651,6 +658,7 @@ class dbBuilder:
                 try:
                     nba_teams[i] = db_reader.player_affiliation(row["name"], row["date"])[1]
                 except:
+                    print("No NBA Name for", row)
                     breakpoint()
         
         fantasy_rosters["nba_team"] = nba_teams
@@ -689,14 +697,14 @@ if __name__ == "__main__":
     f = "yahoo_fantasy_2023_24.sqlite"
 
     builder = dbBuilder(f, debug=True)
-    builder.update_db()
+    # builder.update_db()
     # builder.delete_table("GAMES_PER_DAY_2022_23")
     # builder.update_num_games_per_day()
 
     # builder.add_nba_team_info_to_fantasy_rosters()
 
-    con = sqlite3.connect(f)
-    cur = con.cursor()
+    # con = sqlite3.connect(f)
+    # cur = con.cursor()
 
 
-    db = dbInterface(f)
+    # db = dbInterface(f)

@@ -120,8 +120,9 @@ def plot_matchup_matrix(pred_mat: np.array, order: list[str],
         # add in patches to mark who actually played who in that week
         # get number of unique matchups:
         for m in matchup_df['matchupNumber'].unique():
-            teams = matchup_df[matchup_df['matchupNumber']==m].manager
+            teams = matchup_df[matchup_df['matchupNumber']==m].manager.values
             i, j = order.index(teams[0]), order.index(teams[1])
+            print("matchup:", m, "index:", i, j)
             ax.add_patch(Rectangle((i,j), 1, 1, fill=False, edgecolor='blue', lw=3))
             ax.add_patch(Rectangle((j,i), 1, 1, fill=False, edgecolor='blue', lw=3))
 
@@ -268,9 +269,9 @@ def run_past_predictions(db, week):
 if __name__ == "__main__":
     
     doPreds = True
-    updateDB = False
-    today = True
-    week = 4
+    updateDB = True
+    today = False
+    week = 6
     db_file = "yahoo_fantasy_2023_24.sqlite"
     db = dbInterface(db_file)
     if updateDB:

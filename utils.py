@@ -56,7 +56,8 @@ ROSTER_SPOTS = {"PG": 1, "SG": 1, "G": 1, "SF": 1,
 
 
 SPECIAL_NAMES = {"P.J. Washington Jr.": "P.J. Washington",
-                 "OG Anunoby": "OG Anunoby"}
+                 "OG Anunoby": "OG Anunoby",
+                 "Craig Porter Jr.": "Craig Porter"}
 def yahoo_to_nba_name(name: str, hardcoded: dict = SPECIAL_NAMES) -> str:
     """
     Converts a yahoo API name to NBA api name. By in large they have the
@@ -102,6 +103,7 @@ def yahoo_to_nba_name(name: str, hardcoded: dict = SPECIAL_NAMES) -> str:
                 if len(player) == 1:
                     return player[0]['full_name']
             except Exception as e:
+                # Try searching one more place
                 print(e)
                 raise ValueError(f"Player {name} not found")
 
