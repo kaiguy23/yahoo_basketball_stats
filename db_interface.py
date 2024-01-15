@@ -269,6 +269,10 @@ class dbInterface:
         """
         if not isinstance(date, str):
             date = date.strftime(utils.DATE_SCHEMA)
+        # Dates in the future
+        if date > utils.TODAY_STR:
+            print("WARNING: ASKED FOR ROSTERS FOR DATE IN FUTURE. RETURNING CURRENT ROSTERS")
+            date = utils.TODAY_STR
         return self.get_fantasy_rosters(f"WHERE date LIKE '{date}'")
     
     def current_week(self) -> int:

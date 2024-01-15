@@ -418,8 +418,8 @@ def extract_matchup_scores(league: yfa.league.League,
             fg = teamStats[0]['stat']['value'].split('/')
             ft = teamStats[2]['stat']['value'].split('/')
             teamStats = [teamStats[1]] + teamStats[3:]
-            labeledStats = {statNames: float(statValues['stat']['value']) if statValues['stat']['value'] else 0
-                    for statNames,statValues in zip(statCats,teamStats)}
+            labeledStats = {statNames: float(statValues['stat']['value']) if statValues['stat']['value'] and statValues["stat"]["value"] != "-" else 0
+                for statNames,statValues in zip(statCats,teamStats)}
             if fg[0] == '':
                 fg[0] = 0
             if fg[1] == '':
