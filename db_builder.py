@@ -355,7 +355,7 @@ class dbBuilder:
             
             # Get the current NBA Rosters
             entry = nba_by_team.get_group(team).iloc[0]
-            roster = commonteamroster.CommonTeamRoster(entry['TEAM_ID'], self.season).get_data_frames()[0]
+            roster = commonteamroster.CommonTeamRoster(entry['TEAM_ID'], self.season.replace("_", "-")).get_data_frames()[0]
             roster.rename(columns = {"PLAYER": "PLAYER_NAME",
                                      "TeamID": "TEAM_ID"}, inplace=True)
             roster["TEAM_ABBREVIATION"] = team
@@ -651,7 +651,13 @@ class dbBuilder:
                 names[i] = utils.yahoo_to_nba_name(row["yahoo_name"])
         fantasy_rosters["name"] = names
         
-        # Add missing information
+        # Resave with updated names -- reset fantasy lookup table with new reader
+        table_name = f"FANTASY_ROSTERS_{self.season}"
+        fantasy_rosters.to_sql(table_name, self.con, if_exists="replace", index=False)
+        db_reader = dbInterface(self.db_file)
+        fantasy_rosters = db_reader.get_fantasy_rosters()
+        
+        # Add missing nba team information
         nba_teams = fantasy_rosters["nba_team"].values
         for i, row in fantasy_rosters.iterrows():
             if nba_teams[i] == "" or nba_teams[i] is None:

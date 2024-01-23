@@ -57,7 +57,8 @@ ROSTER_SPOTS = {"PG": 1, "SG": 1, "G": 1, "SF": 1,
 
 SPECIAL_NAMES = {"P.J. Washington Jr.": "P.J. Washington",
                  "OG Anunoby": "OG Anunoby",
-                 "Craig Porter Jr.": "Craig Porter"}
+                 "Craig Porter Jr.": "Craig Porter",
+                 "GG Jackson II": "GG Jackson"}
 def yahoo_to_nba_name(name: str, hardcoded: dict = SPECIAL_NAMES) -> str:
     """
     Converts a yahoo API name to NBA api name. By in large they have the
