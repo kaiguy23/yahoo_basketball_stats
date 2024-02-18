@@ -271,7 +271,7 @@ if __name__ == "__main__":
     doPreds = True
     updateDB = True
     today = False
-    week = 16
+    week = 17
     db_file = "yahoo_fantasy_2023_24.sqlite"
     db = dbInterface(db_file)
     if updateDB:
