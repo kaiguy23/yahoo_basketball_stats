@@ -709,10 +709,11 @@ if __name__ == "__main__":
     
 
     
-    db = dbInterface("past_season_dbs/yahoo_fantasy_2022_23.sqlite")
-    date = "2023-01-30"
+    # db = dbInterface("past_season_dbs/yahoo_fantasy_2022_23.sqlite")
+    db = dbInterface("yahoo_fantasy_2023_24.sqlite")
+    # date = "2023-01-30"
     # date2 = "2023-02-05"
-    date = "2023-11-06"
+    date = "2024-02-11"
     # date2 = "2023-02-05"
 
     week = db.week_for_date(date)
@@ -727,7 +728,10 @@ if __name__ == "__main__":
     # db.get_nba_stats("WHERE PLAYER_NAME LIKE 'Paul George'")
     # entries = calc_actual_played(db, "418.l.20454.t.4", date, date2)
 
-    res = predict_matchup(db, date, "428.l.2784.t.6", "428.l.2784.t.8", proj, scores)
+    team1, team2 = "428.l.2784.t.6", "428.l.2784.t.4"
+    # res = predict_matchup(db, date, team1, team2, proj, scores)
+
+    preds = predict_matchup(db, date, team1, team2, proj=proj, scores=scores)
 
     t2 = time.time()
 

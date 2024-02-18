@@ -376,7 +376,7 @@ class dbInterface:
         return (fantasy_team, nba_team)
 
 
-    def player_stats(self, name: str) -> pd.DataFrame:
+    def player_stats(self, name: str, date: Union[str, datetime.datetime] = "") -> pd.DataFrame:
         """
         Returns all the entries from the nba stats table
         that correspond to the specified player.
@@ -386,17 +386,25 @@ class dbInterface:
 
         Args:
             name (str): name of player from nba api
+            date: date of stats
 
         Returns:
             pd.DataFrame: dataframe of games played
         """
 
         if name in self.nba_stats.groups:
-            return self.nba_stats.get_group(name)
+            res = self.nba_stats.get_group(name)
         
         # Return empty df with the right columns if not there
         else:
-            return self.nba_stats.get_group(list(self.nba_stats.groups)[0]).iloc[:0]
+            res = self.nba_stats.get_group(list(self.nba_stats.groups)[0]).iloc[:0]
+        
+        if date != "":
+            if not isinstance(date, str):
+                date = date.strftime(utils.DATE_SCHEMA)
+            res = res[res.GAME_DATE == date]
+        return res
+
 
     def teamID_lookup(self, teamID: str) -> tuple:
         """
@@ -562,6 +570,7 @@ class dbInterface:
             team_stats = self.get_nba_stats(sql_query)
             # Filter out people who were on IL or bench
             team_stats = team_stats[team_stats["selected_position"].isin(utils.ACTIVE_POS)]
+            # breakpoint()
             for stat in utils.STATS_COLS:
                 # Set to 0 if empty -> beginning of the week
                 # This will also set the attemps/made columns
@@ -581,21 +590,49 @@ class dbInterface:
         return sched
     
 
-    def player_contributions(self, week:int, teamID: str):
+    def player_contributions(self, teamID: str, week:int = -1, date: Union[str, datetime.datetime] = ""):
+
+        if isinstance(date, str) and date != "":
+            # Convert from string to date
+            date = datetime.datetime.strptime(date, utils.DATE_SCHEMA)
+        # From date to string
+        if date != "":
+            date_str = date.strftime(utils.DATE_SCHEMA)
+        else:
+            date_str = ""
 
         ros = self.get_fantasy_rosters()
         ros = ros[ros.teamID == teamID]
+        if week != -1:
+            ros = ros[ros["week"]==week]
+        if date_str != "":
+            ros = ros[ros["date"]==date_str]
+
         players = np.unique(ros["name"])
         all_stats = []
         for player in players:
-            stats = db.player_stats(player)
-            stats = stats[stats["week"]==1][utils.STATS_COLS].sum()
+            stats = self.player_stats(player)
+            if week != -1:
+                stats = stats[stats["week"]==week]
+            if date_str != "":
+                stats = stats[stats["GAME_DATE"] == date_str]
+            if stats.shape[0] == 0:
+                continue
+            # Gets whether they were benched or not
+            zero_mask = stats["selected_position"].isin(utils.ACTIVE_POS).to_numpy().astype(int)
+            stats = stats[utils.STATS_COLS].apply(lambda col: col*zero_mask)
+            stats = stats.sum()
             stats["name"] = player
-            all_stats.append(stats[["name"]+utils.STATS_COLS])
-        all_stats = pd.DataFrame(all_stats)
-        all_stats.set_index("name", inplace=True)
+            all_stats.append(stats)
+
+        # If it's not empty
+        if all_stats:       
+            all_stats = pd.DataFrame(all_stats)
+            all_stats.set_index("name", inplace=True)
 
         return all_stats
+
+
 
 
 if __name__ == "__main__":

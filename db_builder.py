@@ -236,8 +236,6 @@ class dbBuilder:
         the current day.
 
         """
-        ## TODO: UPDATE STATS EVERY TIME?
-
         # Start and end days to get stats for
         db_reader = dbInterface(self.db_file)
         start_day = db_reader.week_date_range(1)[0]
@@ -316,7 +314,7 @@ class dbBuilder:
             all_entries.append(new_df)
 
         all_entries = pd.concat(all_entries)
-        all_entries.to_sql(table_name, self.con, if_exists="append",index=False)
+        all_entries.to_sql(table_name, self.con, if_exists="replace",index=False)
         self.con.commit()
         return 
     
@@ -712,5 +710,5 @@ if __name__ == "__main__":
     # con = sqlite3.connect(f)
     # cur = con.cursor()
 
-
+    builder.update_nba_stats()
     # db = dbInterface(f)
